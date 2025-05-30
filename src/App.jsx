@@ -19,7 +19,7 @@ function App() {
             <div className="text-xl font-semibold">{job.customer}</div>
             <div className="text-gray-600">{job.location} • {job.date} at {job.time}</div>
             <div className="mt-2">
-              Status: <span className={\`font-semibold \${job.status === 'Unassigned' ? 'text-red-600' : 'text-green-600'}\`}>{job.status}</span>
+              Status: <span className={`font-semibold ${job.status === 'Unassigned' ? 'text-red-600' : 'text-green-600'}`}>{job.status}</span>
               {job.cleaner && <span> → {job.cleaner}</span>}
             </div>
           </li>
