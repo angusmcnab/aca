@@ -1,6 +1,8 @@
 // src/EditJobModal.jsx
 import { useState } from "react";
 import { supabase } from "./supabase";
+// Import all helpers from the validation utility
+import { validateJobForm, getToday, getMaxDate } from "./utils/validation";
 
 export default function EditJobModal({ job, onUpdate, onCancel }) {
   const [title, setTitle] = useState(job.title);
@@ -12,63 +14,14 @@ export default function EditJobModal({ job, onUpdate, onCancel }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  // --- Date restriction logic ---
-  const getToday = () => new Date().toISOString().split("T")[0];
-  const getMaxDate = () => {
-    const maxDate = new Date();
-    maxDate.setDate(maxDate.getDate() + 60);
-    return maxDate.toISOString().split("T")[0];
-  };
-
-  // --- NEW: Robust validation function ---
-  const validateForm = () => {
-    const todayStr = getToday();
-    const maxStr = getMaxDate();
-    
-    if (!title.trim()) {
-      setMessage("❌ Job title is required.");
-      return false;
-    }
-    if (!date) {
-      setMessage("❌ Job date is required.");
-      return false;
-    }
-    if (!time) {
-      setMessage("❌ Job time is required.");
-      return false;
-    }
-    if (date < todayStr) {
-      setMessage("❌ Job date cannot be in the past.");
-      return false;
-    }
-    if (date > maxStr) {
-      setMessage("❌ Job date cannot be more than 60 days from now.");
-      return false;
-    }
-    if (budget) {
-      const numericBudget = parseFloat(budget);
-      if (isNaN(numericBudget)) {
-        setMessage("❌ Budget must be a valid number.");
-        return false;
-      }
-      if (numericBudget < 0) {
-        setMessage("❌ Budget cannot be negative.");
-        return false;
-      }
-      if (numericBudget > 999) {
-        setMessage("❌ Budget cannot exceed £999.");
-        return false;
-      }
-    }
-    return true;
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
 
-    if (!validateForm()) {
-      return; // Stop if validation fails
+    const { isValid, message: validationMessage } = validateJobForm({ title, date, time, budget });
+    if (!isValid) {
+      setMessage(validationMessage);
+      return;
     }
 
     setSaving(true);

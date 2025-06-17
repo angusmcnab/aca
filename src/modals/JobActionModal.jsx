@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { supabase } from "../supabase";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
+import { toast } from "react-hot-toast";
+import LocationAutocomplete from "../components/LocationAutocomplete";
 
-// --- Edit View Sub-component with Labels ---
-function EditView({ job, onCancel, onUpdate }) {
+function EditView({ job, onCancel, onUpdate, isGoogleMapsLoaded }) {
   const [title, setTitle] = useState(job.title);
   const [description, setDescription] = useState(job.description || "");
   const [location, setLocation] = useState(job.location || "");
@@ -11,14 +12,12 @@ function EditView({ job, onCancel, onUpdate }) {
   const [time, setTime] = useState(job.time || "");
   const [budget, setBudget] = useState(job.budget || "");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage("");
     const { isValid, message: validationMessage } = validateJobForm({ title, date, time, budget });
     if (!isValid) {
-      setMessage(validationMessage);
+      toast.error(validationMessage);
       return;
     }
     setSaving(true);
@@ -29,7 +28,7 @@ function EditView({ job, onCancel, onUpdate }) {
       .select().single();
     setSaving(false);
     if (error) {
-      setMessage(`❌ ${error.message}`);
+      toast.error(error.message);
     } else {
       onUpdate(data);
     }
@@ -45,10 +44,12 @@ function EditView({ job, onCancel, onUpdate }) {
         <label htmlFor="edit-job-description" className="block text-sm font-medium text-gray-700">Description</label>
         <textarea id="edit-job-description" className="mt-1 w-full p-2 border rounded" value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
+
       <div>
-        <label htmlFor="edit-job-location" className="block text-sm font-medium text-gray-700">Location</label>
-        <input id="edit-job-location" className="mt-1 w-full p-2 border rounded" value={location} onChange={(e) => setLocation(e.target.value)} />
+        <label htmlFor="job-location" className="block text-sm font-medium text-gray-700">Location</label>
+        <LocationAutocomplete onSelectAddress={setLocation} isLoaded={isGoogleMapsLoaded} />
       </div>
+
       <div>
         <label htmlFor="edit-job-date" className="block text-sm font-medium text-gray-700">Date required</label>
         <input id="edit-job-date" className="mt-1 w-full p-2 border rounded" type="date" value={date} onChange={(e) => setDate(e.target.value)} min={getToday()} max={getMaxDate()} required />
@@ -62,8 +63,6 @@ function EditView({ job, onCancel, onUpdate }) {
         <input id="edit-job-budget" className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={budget} onChange={(e) => setBudget(e.target.value)} />
       </div>
 
-      {message && <p className="text-sm text-center font-medium text-red-600">{message}</p>}
-
       <div className="flex justify-end gap-4">
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Cancel</button>
         <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={saving}>
@@ -74,15 +73,12 @@ function EditView({ job, onCancel, onUpdate }) {
   );
 }
 
-
-// --- Main Modal Component ---
-export default function JobActionModal({ job, onClose, onUpdate, onDelete }) {
-  const [mode, setMode] = useState('view'); // 'view', 'edit', 'confirm-delete'
+export default function JobActionModal({ job, onClose, onUpdate, onDelete, isGoogleMapsLoaded }) {
+  const [mode, setMode] = useState('view');
   const handleDelete = () => {
     onDelete(job.id);
   };
 
-  // Helper for displaying values or a fallback
   const detailItem = (label, value, isCurrency = false) => (
     <div>
       <p className="text-sm font-medium text-gray-500">{label}</p>
@@ -97,7 +93,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onDelete }) {
         {mode === 'edit' ? (
           <>
             <h2 className="text-xl font-bold text-gray-800 mb-4">Edit Job</h2>
-            <EditView job={job} onCancel={() => setMode('view')} onUpdate={onUpdate} />
+            <EditView job={job} onCancel={() => setMode('view')} onUpdate={onUpdate} isGoogleMapsLoaded={isGoogleMapsLoaded} />
           </>
         ) : (
           <>

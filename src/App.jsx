@@ -4,8 +4,11 @@ import Auth from './Auth';
 import JobForm from './JobForm';
 import JobList from './JobList';
 import JobActionModal from './modals/JobActionModal';
+import { Toaster, toast } from 'react-hot-toast';
+import { useJsApiLoader } from '@react-google-maps/api';
 
-// A new sub-component for a cleaner header
+const libraries = ['places'];
+
 function Header({ session, onLogout }) {
   return (
     <header className="bg-white shadow">
@@ -27,25 +30,26 @@ function Header({ session, onLogout }) {
   );
 }
 
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const { isLoaded: isGoogleMapsLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
+    libraries,
+  });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth.onAuthStateChange((_event, session) => setSession(session));
   }, []);
 
-  // Fetch jobs effect remains the same...
   useEffect(() => {
     const fetchJobs = async () => {
+      setLoading(true);
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -53,39 +57,44 @@ export default function App() {
 
       if (error) {
         console.error('Error fetching jobs:', error);
+        toast.error('Could not fetch jobs.');
       } else {
         setJobs(data);
       }
+      setLoading(false); 
     };
     fetchJobs();
   }, []);
-  
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setSession(null);
   };
-
+  
   const handleNewJob = (newJob) => {
     setJobs(prevJobs => [newJob, ...prevJobs]);
   };
-
+  
   const handleUpdateJob = (updatedJob) => {
     setJobs(prevJobs => prevJobs.map(job => (job.id === updatedJob.id ? updatedJob : job)));
     setSelectedJob(null);
+    toast.success('Job updated successfully!');
   };
 
   const handleDeleteJob = async (jobId) => {
     const { error } = await supabase.from('jobs').delete().eq('id', jobId);
     if (error) {
-      console.error('Error deleting job:', error);
+      toast.error(error.message);
     } else {
       setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
       setSelectedJob(null);
+      toast.success('Job deleted successfully!');
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <Toaster position="top-center" reverseOrder={false} />
       <Header session={session} onLogout={handleLogout} />
 
       <main className="max-w-4xl mx-auto py-6">
@@ -93,8 +102,8 @@ export default function App() {
           <Auth />
         ) : (
           <div className="space-y-8">
-            <JobForm user={session.user} onNewJob={handleNewJob} />
-            <JobList jobs={jobs} onSelectJob={setSelectedJob} />
+            <JobForm user={session.user} onNewJob={handleNewJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
+            <JobList jobs={jobs} loading={loading} onSelectJob={setSelectedJob} />
           </div>
         )}
       </main>
@@ -105,6 +114,7 @@ export default function App() {
           onClose={() => setSelectedJob(null)}
           onUpdate={handleUpdateJob}
           onDelete={handleDeleteJob}
+          isGoogleMapsLoaded={isGoogleMapsLoaded}
         />
       )}
     </div>

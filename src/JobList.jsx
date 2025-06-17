@@ -1,11 +1,21 @@
-export default function JobList({ jobs, onSelectJob }) {
-  if (!jobs || jobs.length === 0) {
-    return <p>No jobs posted yet.</p>;
-  }
+import SkeletonJobCard from './components/SkeletonJobCard';
 
-  return (
-    <div className="bg-white shadow border rounded-md">
-      <h2 className="text-xl font-semibold text-gray-800 p-4 border-b">Current Jobs</h2>
+export default function JobList({ jobs, loading, onSelectJob }) {
+  // This helper variable will hold the correct content based on the state.
+  let content;
+
+  if (loading) {
+    content = (
+      <ul className="divide-y divide-gray-200">
+        {[...Array(5)].map((_, i) => (
+          <li key={i}><SkeletonJobCard /></li>
+        ))}
+      </ul>
+    );
+  } else if (jobs.length === 0) {
+    content = <p className="p-4 text-gray-500">No jobs have been posted yet.</p>;
+  } else {
+    content = (
       <ul className="divide-y divide-gray-200">
         {jobs.map(job => (
           <li
@@ -26,6 +36,15 @@ export default function JobList({ jobs, onSelectJob }) {
           </li>
         ))}
       </ul>
+    );
+  }
+
+  // The main component structure is now always the same.
+  // We just render the `content` variable inside it.
+  return (
+    <div className="bg-white shadow border rounded-md">
+      <h2 className="text-xl font-semibold text-gray-800 p-4 border-b">Current Jobs</h2>
+      {content}
     </div>
   );
 }
