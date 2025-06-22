@@ -1,15 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import Auth from './Auth';
-// import JobForm from './JobForm'; // We are replacing this
+import JobForm from './JobForm';
 import JobList from './JobList';
 import JobActionModal from './modals/JobActionModal';
 import UpdatePasswordModal from './modals/UpdatePasswordModal';
 import { Toaster, toast } from 'react-hot-toast';
-import { useJsApiLoader } from '@react-google-maps/api';
-import ChecklistJobForm from './components/ChecklistJobForm'; // 1. Import the new form
-
-const libraries = ['places'];
 
 function Header({ session, onLogout }) {
     return (
@@ -27,11 +23,10 @@ function Header({ session, onLogout }) {
     );
 }
 
-// 2. Update the ClientDashboard component to use the new form
-function ClientDashboard({ user, isGoogleMapsLoaded, jobs, loading, onSelectJob, onNewJob }) {
+function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob }) {
     return (
         <div className="space-y-8">
-            <ChecklistJobForm user={user} onPostJob={onNewJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
+            <JobForm user={user} onNewJob={onNewJob} />
             <JobList jobs={jobs} loading={loading} onSelectJob={onSelectJob} />
         </div>
     );
@@ -47,7 +42,6 @@ function CleanerDashboard({ jobs, loading, onSelectJob }) {
     );
 }
 
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -56,27 +50,15 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showUpdatePassword, setShowUpdatePassword] = useState(false);
 
-  const { isLoaded: isGoogleMapsLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
-    libraries,
-  });
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
         setSession(session);
     });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setShowUpdatePassword(true);
-      }
+      if (event === 'PASSWORD_RECOVERY') setShowUpdatePassword(true);
       setSession(session);
-      if (event === 'SIGNED_OUT') {
-        setProfile(null);
-      }
+      if (event === 'SIGNED_OUT') setProfile(null);
     });
-
     return () => subscription.unsubscribe();
   }, []);
   
@@ -86,13 +68,11 @@ export default function App() {
           const { data, error } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
           if (error) {
             toast.error('Error fetching user profile.');
-            console.error('Error fetching profile:', error);
           } else {
             setProfile(data);
           }
         };
         fetchProfile();
-
         const fetchJobs = async () => {
         setLoading(true);
         const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
@@ -109,9 +89,7 @@ export default function App() {
 
   const handleUpdatePassword = async (password) => {
     const { data, error } = await supabase.auth.updateUser({ password: password });
-    if (!error) {
-        setShowUpdatePassword(false);
-    }
+    if (!error) setShowUpdatePassword(false);
     return error;
   };
 
@@ -119,11 +97,9 @@ export default function App() {
     await supabase.auth.signOut();
     setJobs([]);
   };
-
   const handleNewJob = (newJob) => {
     setJobs(prevJobs => [newJob, ...prevJobs]);
   };
-  
   const handleUpdateJob = (updatedJob) => {
     setJobs(prevJobs => prevJobs.map(job => (job.id === updatedJob.id ? updatedJob : job)));
     setSelectedJob(null);
@@ -131,23 +107,20 @@ export default function App() {
   };
 
   const handleDeleteJob = async (jobId) => {
-    const { error } = await supabase.from('jobs').delete().eq('id', jobId);
+    const { error } = await supabase.from("jobs").delete().eq("id", jobId);
     if (error) {
-      toast.error(error.message);
+      toast.error(`Failed to delete job: ${error.message}`);
     } else {
-      setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
+      toast.success("Job deleted!");
+      setJobs(jobs.filter((job) => job.id !== jobId));
       setSelectedJob(null);
-      toast.success('Job deleted successfully!');
     }
   };
 
   const renderDashboard = () => {
-    if (!profile) {
-      return <div className="text-center p-4">Loading user profile...</div>;
-    }
-
+    if (!profile) return <div className="text-center p-4">Loading user profile...</div>;
     if (profile.role === 'client') {
-      return <ClientDashboard user={session.user} isGoogleMapsLoaded={isGoogleMapsLoaded} jobs={jobs} loading={loading} onSelectJob={setSelectedJob} onNewJob={handleNewJob} />;
+      return <ClientDashboard user={session.user} jobs={jobs} loading={loading} onSelectJob={setSelectedJob} onNewJob={handleNewJob} />;
     } else if (profile.role === 'cleaner') {
       return <CleanerDashboard jobs={jobs} loading={loading} onSelectJob={setSelectedJob} />;
     } else {
@@ -155,24 +128,16 @@ export default function App() {
     }
   };
 
-
   return (
     <div className="min-h-screen bg-gray-100">
       <Toaster position="top-center" reverseOrder={false} />
       <Header session={session} onLogout={handleLogout} />
-
       <main className="max-w-4xl mx-auto py-6">
-        {!session ? (
-          <Auth />
-        ) : (
-          renderDashboard()
-        )}
+        {!session ? <Auth /> : renderDashboard()}
       </main>
-
       {selectedJob && (
-        <JobActionModal job={selectedJob} currentUserId={session.user.id} onClose={() => setSelectedJob(null)} onUpdate={handleUpdateJob} onDelete={handleDeleteJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
+        <JobActionModal job={selectedJob} currentUserId={session.user.id} onClose={() => setSelectedJob(null)} onUpdate={handleUpdateJob} onDelete={handleDeleteJob} />
       )}
-      
       {showUpdatePassword && (
         <UpdatePasswordModal onUpdatePassword={handleUpdatePassword} />
       )}
