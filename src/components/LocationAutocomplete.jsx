@@ -1,52 +1,55 @@
-import { useState, useEffect } from 'react';
-import PlacesAutocomplete from 'react-places-autocomplete';
+import React, { useRef } from 'react';
+import { Autocomplete } from '@react-google-maps/api';
+import { useGoogleMaps } from '../context/GoogleMapsContext';
+import { toast } from 'react-hot-toast';
 
 export default function LocationAutocomplete({ onSelectAddress, initialValue = '' }) {
-  const [address, setAddress] = useState(initialValue);
+  const { isLoaded, loadError } = useGoogleMaps();
+  const autocompleteRef = useRef(null);
 
-  useEffect(() => {
-    setAddress(initialValue || '');
-  }, [initialValue]);
-
-  const handleSelect = (selectedAddress) => {
-    setAddress(selectedAddress);
-    onSelectAddress(selectedAddress);
+  const handleLoad = (autocomplete) => {
+    autocompleteRef.current = autocomplete;
   };
 
+  const handlePlaceChanged = () => {
+    if (autocompleteRef.current) {
+      const place = autocompleteRef.current.getPlace();
+      if (place && place.formatted_address) {
+        onSelectAddress(place.formatted_address);
+      } else {
+        toast.error("Please select a valid address from the list.");
+      }
+    }
+  };
+  
+  if (loadError) {
+    toast.error('Failed to load Google Maps. Please check API key.', { id: 'maps-error' });
+    return <input className="mt-1 w-full p-2 border rounded bg-red-100 text-red-700" disabled value="Map service failed" />;
+  }
+
+  if (!isLoaded) {
+    // Your loading spinner component
+    return (
+      <div className="mt-1 w-full p-2 border rounded bg-gray-100 text-gray-500 flex items-center">
+        {/* SVG spinner */}
+        Loading map...
+      </div>
+    );
+  }
+
   return (
-    <PlacesAutocomplete
-      value={address}
-      onChange={setAddress}
-      onSelect={handleSelect}
+    <Autocomplete
+      onLoad={handleLoad}
+      onPlaceChanged={handlePlaceChanged}
+      options={{ componentRestrictions: { country: 'gb' } }} // Restricts search to Great Britain
     >
-      {({ getInputProps, suggestions, getSuggestionItemProps, loading }) => (
-        <div className="relative">
-          <input
-            {...getInputProps({
-              placeholder: 'Start typing an address...',
-              className: 'mt-1 w-full p-2 border rounded',
-            })}
-          />
-          <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-b-md shadow-lg mt-1">
-            {loading && <div className="p-2 text-gray-500">Loading...</div>}
-            {suggestions.map(suggestion => {
-              const className = suggestion.active
-                ? 'bg-blue-100 cursor-pointer p-2'
-                : 'bg-white cursor-pointer p-2';
-              return (
-                <div
-                  {...getSuggestionItemProps(suggestion, {
-                    className,
-                  })}
-                  key={suggestion.placeId}
-                >
-                  <span>{suggestion.description}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </PlacesAutocomplete>
+      <input
+        id="job-location"
+        type="text"
+        className="mt-1 w-full p-2 border rounded"
+        placeholder="Start typing an address..."
+        defaultValue={initialValue}
+      />
+    </Autocomplete>
   );
 }
