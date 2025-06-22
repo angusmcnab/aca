@@ -1,40 +1,60 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import Auth from './Auth';
-import JobForm from './JobForm';
+// import JobForm from './JobForm'; // We are replacing this
 import JobList from './JobList';
 import JobActionModal from './modals/JobActionModal';
+import UpdatePasswordModal from './modals/UpdatePasswordModal';
 import { Toaster, toast } from 'react-hot-toast';
 import { useJsApiLoader } from '@react-google-maps/api';
+import ChecklistJobForm from './components/ChecklistJobForm'; // 1. Import the new form
 
 const libraries = ['places'];
 
 function Header({ session, onLogout }) {
-  return (
-    <header className="bg-white shadow">
-      <div className="max-w-4xl mx-auto py-4 px-4 flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">CleanerApp MkV</h1>
-        {session && (
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{session.user.email}</span>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-semibold"
-            >
-              Logout
-            </button>
+    return (
+        <header className="bg-white shadow">
+          <div className="max-w-4xl mx-auto py-4 px-4 flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">CleanerApp MkV</h1>
+            {session && (
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">{session.user.email}</span>
+                <button onClick={onLogout} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-semibold">Logout</button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </header>
-  );
+        </header>
+    );
 }
+
+// 2. Update the ClientDashboard component to use the new form
+function ClientDashboard({ user, isGoogleMapsLoaded, jobs, loading, onSelectJob, onNewJob }) {
+    return (
+        <div className="space-y-8">
+            <ChecklistJobForm user={user} onPostJob={onNewJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
+            <JobList jobs={jobs} loading={loading} onSelectJob={onSelectJob} />
+        </div>
+    );
+}
+
+function CleanerDashboard({ jobs, loading, onSelectJob }) {
+    return (
+        <div className="bg-white shadow border rounded-md p-6">
+            <h2 className="text-2xl font-bold text-gray-800">Available Jobs</h2>
+            <p className="mt-2 text-gray-600">This is where a cleaner will see a list of jobs to accept.</p>
+            <JobList jobs={jobs} loading={loading} onSelectJob={onSelectJob} />
+        </div>
+    );
+}
+
 
 export default function App() {
   const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showUpdatePassword, setShowUpdatePassword] = useState(false);
 
   const { isLoaded: isGoogleMapsLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -43,34 +63,63 @@ export default function App() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
-    supabase.auth.onAuthStateChange((_event, session) => setSession(session));
-  }, []);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+    });
 
-  useEffect(() => {
-    const fetchJobs = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('jobs')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching jobs:', error);
-        toast.error('Could not fetch jobs.');
-      } else {
-        setJobs(data);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowUpdatePassword(true);
       }
-      setLoading(false); 
-    };
-    fetchJobs();
+      setSession(session);
+      if (event === 'SIGNED_OUT') {
+        setProfile(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+  
+  useEffect(() => {
+    if (session) {
+        const fetchProfile = async () => {
+          const { data, error } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+          if (error) {
+            toast.error('Error fetching user profile.');
+            console.error('Error fetching profile:', error);
+          } else {
+            setProfile(data);
+          }
+        };
+        fetchProfile();
+
+        const fetchJobs = async () => {
+        setLoading(true);
+        const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+        if (error) {
+            toast.error('Could not fetch jobs.');
+        } else {
+            setJobs(data);
+        }
+        setLoading(false); 
+        };
+        fetchJobs();
+    }
+  }, [session]);
+
+  const handleUpdatePassword = async (password) => {
+    const { data, error } = await supabase.auth.updateUser({ password: password });
+    if (!error) {
+        setShowUpdatePassword(false);
+    }
+    return error;
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setSession(null);
+    setJobs([]);
   };
-  
+
   const handleNewJob = (newJob) => {
     setJobs(prevJobs => [newJob, ...prevJobs]);
   };
@@ -92,6 +141,21 @@ export default function App() {
     }
   };
 
+  const renderDashboard = () => {
+    if (!profile) {
+      return <div className="text-center p-4">Loading user profile...</div>;
+    }
+
+    if (profile.role === 'client') {
+      return <ClientDashboard user={session.user} isGoogleMapsLoaded={isGoogleMapsLoaded} jobs={jobs} loading={loading} onSelectJob={setSelectedJob} onNewJob={handleNewJob} />;
+    } else if (profile.role === 'cleaner') {
+      return <CleanerDashboard jobs={jobs} loading={loading} onSelectJob={setSelectedJob} />;
+    } else {
+      return <div className="text-center p-4">Unknown user role. Please contact support.</div>;
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-gray-100">
       <Toaster position="top-center" reverseOrder={false} />
@@ -101,21 +165,16 @@ export default function App() {
         {!session ? (
           <Auth />
         ) : (
-          <div className="space-y-8">
-            <JobForm user={session.user} onNewJob={handleNewJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
-            <JobList jobs={jobs} loading={loading} onSelectJob={setSelectedJob} />
-          </div>
+          renderDashboard()
         )}
       </main>
 
       {selectedJob && (
-        <JobActionModal
-          job={selectedJob}
-          onClose={() => setSelectedJob(null)}
-          onUpdate={handleUpdateJob}
-          onDelete={handleDeleteJob}
-          isGoogleMapsLoaded={isGoogleMapsLoaded}
-        />
+        <JobActionModal job={selectedJob} currentUserId={session.user.id} onClose={() => setSelectedJob(null)} onUpdate={handleUpdateJob} onDelete={handleDeleteJob} isGoogleMapsLoaded={isGoogleMapsLoaded} />
+      )}
+      
+      {showUpdatePassword && (
+        <UpdatePasswordModal onUpdatePassword={handleUpdatePassword} />
       )}
     </div>
   );
