@@ -68,8 +68,11 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+// Find the EditView component and replace its return statement with this:
+
+return (
+    // CHANGE 1: The onSubmit handler is removed from the form tag.
+    <form className="space-y-4">
       <div>
         <label htmlFor="edit-job-title" className="block text-sm font-medium text-gray-700">Job Title</label>
         <input id="edit-job-title" className="mt-1 w-full p-2 border rounded" value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -94,6 +97,7 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
       </div>
       <div className="border-t pt-4">
         <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
+        {/* Task logic remains the same */}
         <div className="p-4 bg-gray-50 rounded-md space-y-3">
           <div className="flex items-end gap-2">
             <div className="w-1/3">
@@ -125,7 +129,14 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
 
       <div className="flex justify-end gap-4 border-t pt-4">
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Cancel</button>
-        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={saving}>
+        
+        {/* CHANGE 2: The Save button is now type="button" with an onClick handler */}
+        <button 
+          type="button" 
+          onClick={handleSubmit} 
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" 
+          disabled={saving}
+        >
           {saving ? "Saving..." : "Save Changes"}
         </button>
       </div>
