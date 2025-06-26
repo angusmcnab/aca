@@ -1,19 +1,23 @@
+// src/modals/JobActionModal.jsx
+
 import { useState, useEffect } from "react";
 import { supabase } from "../supabase";
 import { toast } from "react-hot-toast";
-import { getToday, getMaxDate } from "../utils/validation";
+import { getToday, getMaxDate, validateJobForm } from "../utils/validation";
 import LocationAutocomplete from "../components/LocationAutocomplete";
 
+// Internal component for the Edit Form
 function EditView({ job, initialTasks, onCancel, onUpdate }) {
   const [title, setTitle] = useState(job.title);
   const [location, setLocation] = useState(job.location || '');
   const [date, setDate] = useState(job.date || '');
   const [time, setTime] = useState(job.time || '');
-  const [budget, setBudget] = useState(job.budget || '');
+  const [budget, setBudget] = useState(job.budget ?? '');
   const [saving, setSaving] = useState(false);
   const [tasks, setTasks] = useState(initialTasks || []);
   const [currentCategory, setCurrentCategory] = useState('');
   const [currentTask, setCurrentTask] = useState('');
+  const [message, setMessage] = useState('');
 
   const handleAddTask = () => {
     if (!currentTask.trim()) return;
@@ -33,18 +37,33 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setMessage('');
+
+    const validation = validateJobForm({ title, date, time, budget });
+    if (!validation.isValid) {
+      setMessage(validation.message);
+      return;
+    }
+
     setSaving(true);
     const tasksToSave = tasks.map(({ category, task_description }) => ({ category, task_description }));
+    
+    // Using original RPC function name
     const { error } = await supabase.rpc('update_job_with_tasks', {
-        p_job_id: job.id, p_title: title, p_location: location,
-        p_date: date, p_time: time, p_budget: budget, p_tasks: tasksToSave
+        p_job_id: job.id,
+        p_title: title,
+        p_location: location,
+        p_date: date,
+        p_time: time,
+        p_budget: parseFloat(budget),
+        p_tasks: tasksToSave
     });
     setSaving(false);
     if (error) {
         toast.error(`Failed to save changes: ${error.message}`);
     } else {
         toast.success("Job updated successfully!");
-        const updatedJob = { ...job, title, location, date, time, budget };
+        const updatedJob = { ...job, title, location, date, time, budget: parseFloat(budget) };
         onUpdate(updatedJob);
     }
   };
@@ -71,7 +90,7 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
       </div>
       <div>
         <label htmlFor="edit-job-budget" className="block text-sm font-medium text-gray-700">Budget (£)</label>
-        <input id="edit-job-budget" className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={budget} onChange={e => setBudget(e.target.value)} />
+        <input id="edit-job-budget" className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={budget} onChange={e => setBudget(e.target.value)} required />
       </div>
       <div className="border-t pt-4">
         <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
@@ -101,6 +120,9 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
           {tasks.length === 0 && <p className="text-sm text-gray-500 text-center">No tasks for this job.</p>}
         </ul>
       </div>
+      
+      {message && <p className="text-sm text-center font-medium text-red-600">{message}</p>}
+
       <div className="flex justify-end gap-4 border-t pt-4">
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Cancel</button>
         <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={saving}>
@@ -111,6 +133,7 @@ function EditView({ job, initialTasks, onCancel, onUpdate }) {
   );
 }
 
+// Main Modal component controller
 export default function JobActionModal({ job, onClose, onUpdate, onDelete, currentUserId }) {
   const [mode, setMode] = useState('view');
   const [tasks, setTasks] = useState([]);
@@ -121,6 +144,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onDelete, curre
     if (!job.id) return;
     const fetchTasks = async () => {
         setIsLoadingTasks(true);
+        // Using original table name 'job_tasks'
         const { data, error } = await supabase.from('job_tasks').select('*').eq('job_id', job.id).order('created_at');
         if (error) {
             toast.error("Could not fetch job tasks.");
@@ -181,7 +205,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onDelete, curre
                 {detailItem("Time", job.time)}
                 {detailItem("Budget", job.budget, true)}
             </div>
-            {/* The block for view-mode buttons and the confirm-delete UI goes here */}
             {mode === 'view' && 
                 <div className="flex justify-end gap-4">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>

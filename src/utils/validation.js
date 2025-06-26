@@ -46,18 +46,23 @@ export const validateJobForm = (formData) => {
     return { isValid: false, message: "❌ Job date cannot be more than 60 days from now." };
   }
 
-  if (budget) {
-    const numericBudget = parseFloat(budget);
-    if (isNaN(numericBudget)) {
-      return { isValid: false, message: "❌ Budget must be a valid number." };
-    }
-    if (numericBudget < 0) {
-      return { isValid: false, message: "❌ Budget cannot be negative." };
-    }
-    if (numericBudget > 999) {
-      return { isValid: false, message: "❌ Budget cannot exceed £999." };
-    }
+  // --- MODIFIED VALIDATION LOGIC FOR BUDGET ---
+  // Check if budget is empty (but allow for a budget of 0)
+  if (!budget && budget !== 0) {
+      return { isValid: false, message: "❌ A budget is required." };
   }
+
+  const numericBudget = parseFloat(budget);
+  if (isNaN(numericBudget)) {
+    return { isValid: false, message: "❌ Budget must be a valid number." };
+  }
+  if (numericBudget < 0) {
+    return { isValid: false, message: "❌ Budget cannot be negative." };
+  }
+  if (numericBudget > 999) {
+    return { isValid: false, message: "❌ Budget cannot exceed £999." };
+  }
+  // ---------------------------------------------
 
   return { isValid: true, message: "" };
 };

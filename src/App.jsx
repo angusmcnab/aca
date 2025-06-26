@@ -103,7 +103,7 @@ export default function App() {
   const handleUpdateJob = (updatedJob) => {
     setJobs(prevJobs => prevJobs.map(job => (job.id === updatedJob.id ? updatedJob : job)));
     setSelectedJob(null);
-    toast.success('Job updated successfully!');
+   // toast.success('Job updated successfully!');
   };
 
   const handleDeleteJob = async (jobId) => {

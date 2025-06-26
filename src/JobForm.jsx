@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { supabase } from './supabase';
 import LocationAutocomplete from './components/LocationAutocomplete';
-import { getToday, getMaxDate } from './utils/validation';
+// --- CHANGE 1: Import the master validation function ---
+import { getToday, getMaxDate, validateJobForm } from './utils/validation';
 
 export default function JobForm({ user, onNewJob }) {
   const [title, setTitle] = useState('');
@@ -14,6 +15,8 @@ export default function JobForm({ user, onNewJob }) {
   const [currentCategory, setCurrentCategory] = useState('');
   const [currentTask, setCurrentTask] = useState('');
   const [tasks, setTasks] = useState([]);
+  // --- CHANGE 2: Add state to hold and display validation error messages ---
+  const [message, setMessage] = useState('');
 
   const handleAddTask = () => {
     if (!currentTask.trim()) return;
@@ -33,15 +36,23 @@ export default function JobForm({ user, onNewJob }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !date || !time) {
-        toast.error('Please fill out the Job Title, Date, and Time.');
-        return;
+    setMessage(''); // Clear previous messages
+
+    // --- CHANGE 3: Replace old validation with the new centralized function ---
+    const validation = validateJobForm({ title, date, time, budget });
+    if (!validation.isValid) {
+        setMessage(validation.message);
+        return; // Stop submission if validation fails
     }
+    // You can still keep the task-specific validation here
     if (tasks.length === 0) {
-        toast.error('Please add at least one task to the checklist.');
+        setMessage('❌ Please add at least one task to the checklist.');
         return;
     }
+    // --- End of changes ---
+
     setLoading(true);
+    // The rest of the function remains the same...
     const { data: newJob, error: jobError } = await supabase
       .from('jobs')
       .insert({
@@ -50,28 +61,34 @@ export default function JobForm({ user, onNewJob }) {
         location,
         date,
         time,
-        budget: budget ? parseFloat(budget) : null,
+        budget: budget ? parseFloat(budget) : null, // This line is correct
       })
       .select()
       .single();
+
     if (jobError) {
-      toast.error(jobError.message);
+      // You can use the message state for server errors too
+      setMessage(jobError.message);
       setLoading(false);
       return;
     }
+
     const tasksToInsert = tasks.map(task => ({
       job_id: newJob.id,
       category: task.category,
       task_description: task.task_description,
     }));
     const { error: tasksError } = await supabase.from('job_tasks').insert(tasksToInsert);
+
     if (tasksError) {
         toast.error(`Job was created, but tasks failed to save: ${tasksError.message}`);
         setLoading(false);
         return;
     }
+
     toast.success('Job posted successfully!');
     onNewJob(newJob);
+    // Reset form fields
     setTitle('');
     setLocation('');
     setDate('');
@@ -80,6 +97,7 @@ export default function JobForm({ user, onNewJob }) {
     setTasks([]);
     setCurrentCategory('');
     setCurrentTask('');
+    setMessage(''); // Also reset the message
     setLoading(false);
   };
 
@@ -87,6 +105,7 @@ export default function JobForm({ user, onNewJob }) {
     <div className="max-w-xl mx-auto p-6 bg-white shadow-md rounded-md border">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Post a New Job</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* All input fields remain the same */}
         <div>
           <label htmlFor="job-title" className="block text-sm font-medium text-gray-700">Job Title</label>
           <input id="job-title" className="mt-1 w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Weekly Apartment Clean" required />
@@ -109,6 +128,8 @@ export default function JobForm({ user, onNewJob }) {
                 <input id="job-budget" className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={budget} onChange={e => setBudget(e.target.value)} />
             </div>
         </div>
+
+        {/* Task checklist section remains the same */}
         <div className="border-t pt-4">
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
             <div className="p-4 bg-gray-50 rounded-md space-y-3">
@@ -137,6 +158,10 @@ export default function JobForm({ user, onNewJob }) {
                 {tasks.length === 0 && <p className="text-sm text-gray-500 text-center">No tasks added yet.</p>}
             </ul>
         </div>
+        
+        {/* Add this element to display validation messages */}
+        {message && <p className="text-sm text-center font-medium text-red-600 py-2">{message}</p>}
+
         <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 font-semibold" disabled={loading}>
           {loading ? 'Posting...' : 'Post Job'}
         </button>
