@@ -1,50 +1,52 @@
-import SkeletonJobCard from './components/SkeletonJobCard';
+// src/JobList.jsx
 
-export default function JobList({ jobs, loading, onSelectJob }) {
-  // This helper variable will hold the correct content based on the state.
-  let content;
+import React from 'react';
 
+const JobStatusBadge = ({ job, currentUserId, userRole }) => {
+    // Don't show a status for the customer
+    if (userRole !== 'service_provider') {
+        return null;
+    }
+
+    if (job.provider_id) {
+        if (job.provider_id === currentUserId) {
+            return <span className="text-xs font-bold uppercase px-2 py-1 bg-green-200 text-green-800 rounded-full">You Accepted</span>;
+        } else {
+            return <span className="text-xs font-bold uppercase px-2 py-1 bg-red-200 text-red-800 rounded-full">Taken</span>;
+        }
+    } else {
+        return <span className="text-xs font-bold uppercase px-2 py-1 bg-blue-200 text-blue-800 rounded-full">Open</span>;
+    }
+};
+
+export default function JobList({ jobs, loading, onSelectJob, currentUserId, userRole }) {
   if (loading) {
-    content = (
-      <ul className="divide-y divide-gray-200">
-        {[...Array(5)].map((_, i) => (
-          <li key={i}><SkeletonJobCard /></li>
-        ))}
-      </ul>
-    );
-  } else if (jobs.length === 0) {
-    content = <p className="p-4 text-gray-500">No jobs have been posted yet.</p>;
-  } else {
-    content = (
-      <ul className="divide-y divide-gray-200">
-        {jobs.map(job => (
-          <li
-            key={job.id}
-            onClick={() => onSelectJob(job)}
-            className="p-4 hover:bg-gray-50 cursor-pointer"
-          >
-            <div className="flex justify-between items-center">
-                <div>
-                    <h3 className="font-semibold text-lg text-blue-700">{job.title}</h3>
-                    <p className="text-gray-600">{job.location}</p>
-                </div>
-                <div className="text-right">
-                    <p className="font-medium">{new Date(job.date).toLocaleDateString()}</p>
-                    <p className="text-sm text-gray-500">{job.time}</p>
-                </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-    );
+    return <p className="text-gray-500">Loading jobs...</p>;
   }
 
-  // The main component structure is now always the same.
-  // We just render the `content` variable inside it.
+  if (!jobs || jobs.length === 0) {
+    return <p className="text-gray-500">No jobs posted yet.</p>;
+  }
+
   return (
-    <div className="bg-white shadow border rounded-md">
-      <h2 className="text-xl font-semibold text-gray-800 p-4 border-b">Current Jobs</h2>
-      {content}
-    </div>
+    <ul className="space-y-4">
+      {jobs.map(job => (
+        <li key={job.id} onClick={() => onSelectJob(job)} className="p-4 bg-white shadow-md rounded-md border cursor-pointer hover:border-blue-500 transition-colors">
+          <div className="flex justify-between items-center">
+            <div>
+                <h3 className="text-lg font-bold text-gray-900">{job.title}</h3>
+                <p className="text-sm text-gray-600">{job.location}</p>
+            </div>
+            <div className="text-right">
+                <p className="text-lg font-semibold text-gray-800">{job.budget ? `£${job.budget}` : 'No budget set'}</p>
+                {/* Render the new status badge */}
+                <div className="mt-2">
+                    <JobStatusBadge job={job} currentUserId={currentUserId} userRole={userRole} />
+                </div>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
