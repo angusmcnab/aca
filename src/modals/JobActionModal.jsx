@@ -2,15 +2,222 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../supabase";
 import { toast } from "react-hot-toast";
 import TaskChecklist from "../components/TaskChecklist";
+import LocationAutocomplete from "../components/LocationAutocomplete";
+import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
+import JobStatusBadge from "../components/JobStatusBadge";
 
-// Note: EditView sub-component is omitted for brevity as it remains unchanged.
+// --- EditView Sub-component ---
+function EditView({ job, initialTasks, onSave, onCancel }) {
+  const [formData, setFormData] = useState({
+    title: job.title || "",
+    location: job.location || "",
+    date: job.date || "",
+    time: job.time || "",
+    budget: job.budget || "",
+  });
+  const [tasks, setTasks] = useState(initialTasks);
+  const [currentCategory, setCurrentCategory] = useState('');
+  const [currentTask, setCurrentTask] = useState('');
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editingTaskText, setEditingTaskText] = useState({ category: '', description: '' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
 
-export default function JobActionModal({ job, onClose, onChecklistUpdate, currentUserId, userRole }) {
+  const handleChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleLocationSelect = (address) => {
+    setFormData((prev) => ({ ...prev, location: address }));
+  };
+
+  const handleAddTask = () => {
+    if (!currentTask.trim()) return;
+    const newTask = {
+      id: -Date.now(),
+      category: currentCategory.trim() || 'General',
+      task_description: currentTask.trim(),
+    };
+    setTasks([...tasks, newTask]);
+    setCurrentTask('');
+    setCurrentCategory('');
+  };
+
+  const handleDeleteTask = (id) => {
+    setTasks(tasks.filter(task => task.id !== id));
+  };
+
+  const handleEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditingTaskText({ category: task.category, description: task.task_description });
+  };
+
+  const handleCancelEditTask = () => {
+    setEditingTaskId(null);
+  };
+
+  const handleSaveTask = (taskId) => {
+    setTasks(tasks.map(task => 
+      task.id === taskId 
+        ? { ...task, category: editingTaskText.category, task_description: editingTaskText.description } 
+        : task
+    ));
+    setEditingTaskId(null);
+  };
+  
+  const handleSubmit = async () => {
+    setMessage("");
+    const validation = validateJobForm(formData);
+    if (!validation.isValid) {
+      setMessage(validation.message);
+      return;
+    }
+    if (tasks.length === 0) {
+      setMessage('❌ A job must have at least one task.');
+      return;
+    }
+
+    setSaving(true);
+    
+    const { data: updatedJobData, error: jobUpdateError } = await supabase
+      .from("jobs")
+      .update({
+        title: formData.title,
+        location: formData.location,
+        date: formData.date,
+        time: formData.time,
+        budget: formData.budget ? parseFloat(formData.budget) : null,
+      })
+      .eq("id", job.id)
+      .select()
+      .single();
+
+    if (jobUpdateError) {
+      setMessage(`❌ Error updating job: ${jobUpdateError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const initialTaskMap = new Map(initialTasks.map(t => [t.id, t]));
+    const currentTaskMap = new Map(tasks.map(t => [t.id, t]));
+    
+    const tasksToAdd = tasks.filter(t => t.id < 0).map(({ category, task_description }) => ({ job_id: job.id, category, task_description }));
+    const tasksToUpdate = tasks.filter(t => t.id > 0 && (t.category !== initialTaskMap.get(t.id)?.category || t.task_description !== initialTaskMap.get(t.id)?.task_description))
+                               .map(({ id, category, task_description }) => ({ id, category, task_description }));
+    const tasksToDelete = initialTasks.filter(t => !currentTaskMap.has(t.id)).map(t => t.id);
+
+    let taskError = null;
+    if (tasksToAdd.length > 0) {
+      const { error } = await supabase.from('job_tasks').insert(tasksToAdd);
+      if (error) taskError = error;
+    }
+    if (!taskError && tasksToUpdate.length > 0) {
+      for (const task of tasksToUpdate) {
+        const { error } = await supabase.from('job_tasks').update({ category: task.category, task_description: task.task_description }).eq('id', task.id);
+        if (error) { taskError = error; break; }
+      }
+    }
+    if (!taskError && tasksToDelete.length > 0) {
+      const { error } = await supabase.from('job_tasks').delete().in('id', tasksToDelete);
+      if (error) taskError = error;
+    }
+
+    if (taskError) {
+      toast.error(`Job details saved, but failed to update tasks: ${taskError.message}`);
+    } else {
+      toast.success("Job updated successfully!");
+    }
+    
+    onSave(updatedJobData);
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-gray-800 mb-4">Edit Job</h2>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Job Title</label>
+        <input className="mt-1 w-full p-2 border rounded" value={formData.title} onChange={(e) => handleChange('title', e.target.value)} required />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Location</label>
+        <LocationAutocomplete onSelectAddress={handleLocationSelect} initialValue={formData.location} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Date</label>
+          <input className="mt-1 w-full p-2 border rounded" type="date" value={formData.date} onChange={(e) => handleChange('date', e.target.value)} min={getToday()} max={getMaxDate()} required />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Time</label>
+          <input className="mt-1 w-full p-2 border rounded" type="time" value={formData.time} onChange={(e) => handleChange('time', e.target.value)} required />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Budget (£)</label>
+          <input className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={formData.budget} onChange={(e) => handleChange('budget', e.target.value)} />
+        </div>
+      </div>
+      
+      <div className="border-t pt-4">
+        <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
+        <div className="p-4 bg-gray-50 rounded-md space-y-3">
+          <div className="flex items-end gap-2">
+            <div className="w-1/3"><label className="block text-xs font-medium text-gray-600">Category</label><input className="mt-1 w-full p-2 border rounded" value={currentCategory} onChange={e => setCurrentCategory(e.target.value)} placeholder="e.g., Kitchen" /></div>
+            <div className="w-2/3"><label className="block text-xs font-medium text-gray-600">Task</label><input className="mt-1 w-full p-2 border rounded" value={currentTask} onChange={e => setCurrentTask(e.target.value)} placeholder="e.g., Mop the floor" /></div>
+            <button type="button" onClick={handleAddTask} className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 font-semibold">Add</button>
+          </div>
+        </div>
+        <ul className="mt-4 space-y-2 max-h-40 overflow-y-auto">
+          {tasks.map(task => (
+            <li key={task.id} className="p-2 bg-white border rounded-md">
+              {editingTaskId === task.id ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input className="w-1/3 p-2 border rounded" value={editingTaskText.category} onChange={e => setEditingTaskText({...editingTaskText, category: e.target.value})} placeholder="Category"/>
+                    <input className="w-2/3 p-2 border rounded" value={editingTaskText.description} onChange={e => setEditingTaskText({...editingTaskText, description: e.target.value})} placeholder="Description"/>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={handleCancelEditTask} className="text-xs font-semibold text-gray-600">Cancel</button>
+                    <button onClick={() => handleSaveTask(task.id)} className="text-xs font-semibold text-blue-600">Save</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <p className="text-gray-700"><span className="font-semibold">{task.category}:</span> {task.task_description}</p>
+                  <div className="flex gap-4">
+                    <button type="button" onClick={() => handleEditTask(task)} className="text-blue-600 hover:text-blue-800 text-sm font-semibold">Edit</button>
+                    <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-red-500 hover:text-red-700 text-sm font-semibold">Remove</button>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+          {tasks.length === 0 && <p className="text-sm text-gray-500 text-center">No tasks added yet.</p>}
+        </ul>
+      </div>
+      
+      {message && <p className="text-sm text-center font-medium text-red-600">{message}</p>}
+
+      <div className="flex justify-end gap-4 border-t pt-4">
+        <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Cancel</button>
+        <button type="button" onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={saving}>{saving ? "Saving..." : "Save Changes"}</button>
+      </div>
+    </div>
+  );
+}
+
+
+// --- Main Modal Component ---
+export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, currentUserId, userRole }) {
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
 
-  const isJobCompleted = job.status === 'completed';
+  const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
+  const isJobAccepted = !!job.provider_id;
+  const canEdit = isJobOwner && !isJobAccepted;
 
   const fetchTasks = useCallback(async () => {
     if (!job.id) return;
@@ -21,10 +228,10 @@ export default function JobActionModal({ job, onClose, onChecklistUpdate, curren
   }, [job.id]);
 
   useEffect(() => {
+    setIsEditMode(false);
     fetchTasks();
-  }, [job.id]);
+  }, [job, fetchTasks]);
 
-  // This function now handles both task updates and the final job completion
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
     const isNowDone = !taskToToggle.is_done;
@@ -39,32 +246,26 @@ export default function JobActionModal({ job, onClose, onChecklistUpdate, curren
       return;
     }
 
-    // Instantly update the local state to make the UI feel responsive
     const newTasks = tasks.map(t => (t.id === updatedTask.id ? updatedTask : t));
     setTasks(newTasks);
 
     const allTasksDone = newTasks.every(t => t.is_done);
-    let finalUpdatedJob = { ...job }; // Start with the current job state
+    let finalUpdatedJob = { ...job };
 
     if (allTasksDone && job.status !== 'completed') {
       const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select().single();
       if (data && !error) {
         toast.success('Job complete!');
-        finalUpdatedJob = data; // The job was successfully updated
-      } else {
-        toast.error('Error completing job.');
+        finalUpdatedJob = data;
       }
     } else if (!allTasksDone && job.status === 'completed') {
       const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select().single();
       if (data && !error) {
         toast.success("Job status reverted.");
-        finalUpdatedJob = data; // The job was successfully updated
-      } else {
-        toast.error('Error reverting job status.');
+        finalUpdatedJob = data;
       }
     }
     
-    // Notify the main App component of the final state of the job
     onChecklistUpdate(finalUpdatedJob);
     setLoadingTaskId(null);
   };
@@ -90,32 +291,49 @@ export default function JobActionModal({ job, onClose, onChecklistUpdate, curren
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-start">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Job Details</h2>
-          {isJobCompleted && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">Completed</span>}
-        </div>
-        <div className="space-y-4 mb-6">
-          {detailItem("Title", job.title)}
-          <div>
-            {isLoadingTasks ? (<p>Loading tasks...</p>) : (
-              <TaskChecklist
-                tasks={tasks}
-                userId={currentUserId}
-                userRole={userRole}
-                providerId={job.provider_id}
-                onToggleTask={handleToggleTask}
-                loadingTaskId={loadingTaskId}
-              />
-            )}
-          </div>
-        </div>
-        <div className="flex justify-end gap-4 border-t pt-4">
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
-          
-          {userRole === 'service_provider' && !job.provider_id && (
-            <button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>
-          )}
-        </div>
+        
+        {isEditMode ? (
+          <EditView 
+            job={job}
+            initialTasks={tasks}
+            onSave={(updatedJob) => {
+              onUpdate(updatedJob);
+              setIsEditMode(false);
+            }}
+            onCancel={() => setIsEditMode(false)}
+          />
+        ) : (
+          <>
+            <div className="flex justify-between items-start">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">Job Details</h2>
+              <JobStatusBadge job={job} currentUserId={currentUserId} userRole={userRole} />
+            </div>
+            <div className="space-y-4 mb-6">
+              {detailItem("Title", job.title)}
+              {detailItem("Location", job.location)}
+              {detailItem("Date", new Date(job.date).toLocaleDateString())}
+              {detailItem("Time", job.time)}
+              {detailItem("Budget", job.budget ? `£${job.budget}` : 'Not specified')}
+              <div>
+                {isLoadingTasks ? (<p>Loading tasks...</p>) : (
+                  <TaskChecklist
+                    tasks={tasks}
+                    userId={currentUserId}
+                    userRole={userRole}
+                    providerId={job.provider_id}
+                    onToggleTask={handleToggleTask}
+                    loadingTaskId={loadingTaskId}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-4 border-t pt-4">
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
+              {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
+              {userRole === 'service_provider' && !job.provider_id && (<button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>)}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,40 +1,5 @@
-// src/JobList.jsx
-
 import React from 'react';
-
-const JobStatusBadge = ({ job, currentUserId, userRole }) => {
-  if (userRole !== 'service_provider') return null;
-
-  if (job.status === 'completed') {
-    return (
-      <span className="text-xs font-bold uppercase px-2 py-1 bg-gray-300 text-gray-800 rounded-full">
-        Completed
-      </span>
-    );
-  }
-
-  if (job.provider_id === currentUserId) {
-    return (
-      <span className="text-xs font-bold uppercase px-2 py-1 bg-green-200 text-green-800 rounded-full">
-        You Accepted
-      </span>
-    );
-  }
-
-  if (job.provider_id) {
-    return (
-      <span className="text-xs font-bold uppercase px-2 py-1 bg-red-200 text-red-800 rounded-full">
-        Taken
-      </span>
-    );
-  }
-
-  return (
-    <span className="text-xs font-bold uppercase px-2 py-1 bg-blue-200 text-blue-800 rounded-full">
-      Open
-    </span>
-  );
-};
+import JobStatusBadge from './components/JobStatusBadge'; // Import the new component
 
 export default function JobList({ jobs, loading, onSelectJob, currentUserId, userRole }) {
   if (loading) {
@@ -42,7 +7,8 @@ export default function JobList({ jobs, loading, onSelectJob, currentUserId, use
   }
 
   if (!jobs || jobs.length === 0) {
-    return <p className="text-gray-500">No jobs posted yet.</p>;
+    const message = userRole === 'customer' ? "You haven't posted any jobs yet." : "No jobs are currently available.";
+    return <p className="text-gray-500">{message}</p>;
   }
 
   return (
@@ -58,11 +24,12 @@ export default function JobList({ jobs, loading, onSelectJob, currentUserId, use
               <h3 className="text-lg font-bold text-gray-900">{job.title}</h3>
               <p className="text-sm text-gray-600">{job.location}</p>
             </div>
-            <div className="text-right">
+            <div className="text-right flex-shrink-0 ml-4">
               <p className="text-lg font-semibold text-gray-800">
                 {job.budget ? `£${job.budget}` : 'No budget set'}
               </p>
               <div className="mt-2">
+                {/* Use the centralized badge component */}
                 <JobStatusBadge job={job} currentUserId={currentUserId} userRole={userRole} />
               </div>
             </div>
