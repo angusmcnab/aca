@@ -50,10 +50,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showUpdatePassword, setShowUpdatePassword] = useState(false);
 
+  // Auth handler
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setShowUpdatePassword(true);
       setSession(session);
@@ -62,58 +61,48 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Initial fetch + realtime listener
   useEffect(() => {
-    if (session) {
-      const fetchProfile = async () => {
-        const { data, error } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-        if (error) {
-          toast.error('Error fetching user profile.');
-        } else {
-          setProfile(data);
-        }
-      };
-      fetchProfile();
+    if (!session) return;
 
-      const fetchJobs = async () => {
-        setLoading(true);
-        const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
-        if (error) {
-          toast.error('Could not fetch jobs.');
-        } else {
-          setJobs(data);
-        }
-        setLoading(false);
-      };
-      fetchJobs();
-    }
+    const fetchInitialData = async () => {
+      setLoading(true);
+      const { data: profileData, error: profileError } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      if (profileError) toast.error('Error fetching user profile.');
+      else setProfile(profileData);
+
+      const { data: jobsData, error: jobsError } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+      if (jobsError) toast.error('Could not fetch jobs.');
+      else setJobs(jobsData);
+      setLoading(false);
+    };
+
+    fetchInitialData();
+
+    // Set up Realtime listener
+    const jobsChannel = supabase
+      .channel('realtime:jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, (payload) => {
+        setJobs((prevJobs) => {
+          if (payload.eventType === 'DELETE') {
+            return prevJobs.filter((j) => j.id !== payload.old.id);
+          }
+          const exists = prevJobs.some((j) => j.id === payload.new.id);
+          return exists
+            ? prevJobs.map((j) => (j.id === payload.new.id ? payload.new : j))
+            : [payload.new, ...prevJobs];
+        });
+
+        // Keep modal in sync if open
+        setSelectedJob((current) => (current?.id === payload.new?.id ? payload.new : current));
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(jobsChannel);
   }, [session]);
 
-  const handleUpdatePassword = async (password) => {
-    const { error } = await supabase.auth.updateUser({ password });
-    if (!error) setShowUpdatePassword(false);
-    return error;
-  };
-
-const handleLogout = async () => {
-  await supabase.auth.signOut();
-  // Explicitly clear all local state to force a re-render to the login page
-  setSession(null);
-  setProfile(null);
-  setJobs([]);
-  setSelectedJob(null);
-};
-
   const handleNewJob = (newJob) => {
-    // FIX #1: Use the correct variable name 'prevJobs'
-    setJobs(prevJobs => [newJob, ...prevJobs]);
-  };
-
-  const handleUpdateJob = (updatedJob) => {
-    // FIX #1: Use the correct variable name 'prevJobs'
-    setJobs(prevJobs => prevJobs.map(job => job.id === updatedJob.id ? updatedJob : job));
-    if (selectedJob?.id === updatedJob.id) {
-      setSelectedJob(updatedJob);
-    }
+    setJobs((prevJobs) => [newJob, ...prevJobs]);
   };
 
   const handleDeleteJob = async (jobId) => {
@@ -122,37 +111,26 @@ const handleLogout = async () => {
       toast.error(`Failed to delete job: ${error.message}`);
     } else {
       toast.success("Job deleted!");
-      setJobs(jobs.filter(job => job.id !== jobId));
       setSelectedJob(null);
     }
   };
 
+  const handleUpdateJob = (updatedJob) => {
+    setJobs((prevJobs) => prevJobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    setSelectedJob(null);
+  };
+
+  const handleChecklistUpdate = (updatedJob) => {
+    setJobs((prevJobs) => prevJobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    setSelectedJob(updatedJob);
+  };
+
   const renderDashboard = () => {
     if (!profile) return <div className="text-center p-4">Loading user profile...</div>;
-
-    // Correctly checks for 'customer' and 'service_provider'
     if (profile.role === 'customer') {
-      return (
-        <ClientDashboard
-          user={session.user}
-          jobs={jobs}
-          loading={loading}
-          onSelectJob={setSelectedJob}
-          onNewJob={handleNewJob}
-          currentUserId={session.user.id}
-          userRole={profile.role}
-        />
-      );
+      return <ClientDashboard user={session.user} jobs={jobs} loading={loading} onSelectJob={setSelectedJob} onNewJob={handleNewJob} currentUserId={session.user.id} userRole={profile.role} />;
     } else if (profile.role === 'service_provider') {
-      return (
-        <CleanerDashboard
-          jobs={jobs}
-          loading={loading}
-          onSelectJob={setSelectedJob}
-          currentUserId={session.user.id}
-          userRole={profile.role}
-        />
-      );
+      return <CleanerDashboard jobs={jobs} loading={loading} onSelectJob={setSelectedJob} currentUserId={session.user.id} userRole={profile.role} />;
     } else {
       return <div className="text-center p-4">Unknown user role. Please contact support.</div>;
     }
@@ -161,26 +139,22 @@ const handleLogout = async () => {
   return (
     <div className="min-h-screen bg-gray-100">
       <Toaster position="top-center" reverseOrder={false} />
-      <Header session={session} onLogout={handleLogout} />
-      <main className="max-w-4xl mx-auto py-6">
-        {!session ? <Auth /> : renderDashboard()}
-      </main>
+      <Header session={session} onLogout={async () => { await supabase.auth.signOut(); setSession(null); setProfile(null); }} />
+      <main className="max-w-4xl mx-auto py-6">{!session ? <Auth /> : renderDashboard()}</main>
 
-      {/* FIX #2: Added '&& profile' check to prevent crash before profile loads */}
       {selectedJob && profile && (
         <JobActionModal
           job={selectedJob}
-          currentUserId={session?.user?.id}
-          userRole={profile?.role}
+          currentUserId={session.user.id}
+          userRole={profile.role}
           onClose={() => setSelectedJob(null)}
           onUpdate={handleUpdateJob}
+          onChecklistUpdate={handleChecklistUpdate}
           onDelete={handleDeleteJob}
         />
       )}
 
-      {showUpdatePassword && (
-        <UpdatePasswordModal onUpdatePassword={handleUpdatePassword} />
-      )}
+      {showUpdatePassword && <UpdatePasswordModal onUpdatePassword={() => setShowUpdatePassword(false)} />}
     </div>
   );
 }
