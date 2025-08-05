@@ -6,7 +6,7 @@ import LocationAutocomplete from "../components/LocationAutocomplete";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
 
-// --- EditView Sub-component ---
+// --- Sub-component for the Edit View ---
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     title: job.title || "",
@@ -32,15 +32,29 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   };
 
   const handleAddTask = () => {
-    if (!currentTask.trim()) return;
+    if (!currentTask.trim()) {
+      toast.error("Please enter a task description.");
+      return;
+    }
+    if (!currentCategory.trim()) {
+      toast.error("Please enter a category or room.");
+      return;
+    }
     const newTask = {
       id: -Date.now(),
-      category: currentCategory.trim() || 'General',
+      category: currentCategory.trim(),
       task_description: currentTask.trim(),
     };
     setTasks([...tasks, newTask]);
     setCurrentTask('');
     setCurrentCategory('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTask();
+    }
   };
 
   const handleDeleteTask = (id) => {
@@ -163,8 +177,8 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
         <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
         <div className="p-4 bg-gray-50 rounded-md space-y-3">
           <div className="flex items-end gap-2">
-            <div className="w-1/3"><label className="block text-xs font-medium text-gray-600">Category</label><input className="mt-1 w-full p-2 border rounded" value={currentCategory} onChange={e => setCurrentCategory(e.target.value)} placeholder="e.g., Kitchen" /></div>
-            <div className="w-2/3"><label className="block text-xs font-medium text-gray-600">Task</label><input className="mt-1 w-full p-2 border rounded" value={currentTask} onChange={e => setCurrentTask(e.target.value)} placeholder="e.g., Mop the floor" /></div>
+            <div className="w-1/3"><label className="block text-xs font-medium text-gray-600">Category</label><input className="mt-1 w-full p-2 border rounded" value={currentCategory} onChange={e => setCurrentCategory(e.target.value)} onKeyDown={handleKeyDown} placeholder="e.g., Kitchen" /></div>
+            <div className="w-2/3"><label className="block text-xs font-medium text-gray-600">Task</label><input className="mt-1 w-full p-2 border rounded" value={currentTask} onChange={e => setCurrentTask(e.target.value)} onKeyDown={handleKeyDown} placeholder="e.g., Mop the floor" /></div>
             <button type="button" onClick={handleAddTask} className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 font-semibold">Add</button>
           </div>
         </div>
@@ -206,7 +220,6 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     </div>
   );
 }
-
 
 // --- Main Modal Component ---
 export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, currentUserId, userRole }) {
