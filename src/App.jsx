@@ -71,7 +71,12 @@ export default function App() {
       if (profileError) toast.error('Error fetching user profile.');
       else setProfile(profileData);
 
-      const { data: jobsData, error: jobsError } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+      // --- UPDATE THIS QUERY ---
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*, job_tasks(*)') // Fetches jobs and their related tasks
+        .order('created_at', { ascending: false });
+
       if (jobsError) toast.error('Could not fetch jobs.');
       else setJobs(jobsData);
       setLoading(false);
@@ -83,18 +88,8 @@ export default function App() {
     const jobsChannel = supabase
       .channel('realtime:jobs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, (payload) => {
-        setJobs((prevJobs) => {
-          if (payload.eventType === 'DELETE') {
-            return prevJobs.filter((j) => j.id !== payload.old.id);
-          }
-          const exists = prevJobs.some((j) => j.id === payload.new.id);
-          return exists
-            ? prevJobs.map((j) => (j.id === payload.new.id ? payload.new : j))
-            : [payload.new, ...prevJobs];
-        });
-
-        // Keep modal in sync if open
-        setSelectedJob((current) => (current?.id === payload.new?.id ? payload.new : current));
+        // Simple refetch for now to keep task data in sync
+        fetchInitialData(); 
       })
       .subscribe();
 
@@ -102,7 +97,21 @@ export default function App() {
   }, [session]);
 
   const handleNewJob = (newJob) => {
-    setJobs((prevJobs) => [newJob, ...prevJobs]);
+    // To get the tasks, we need to refetch the job list
+    const fetchNewJob = async () => {
+        const { data, error } = await supabase
+            .from('jobs')
+            .select('*, job_tasks(*)')
+            .eq('id', newJob.id)
+            .single();
+
+        if (error) {
+            toast.error("Could not fetch the newly created job.");
+        } else {
+            setJobs((prevJobs) => [data, ...prevJobs]);
+        }
+    };
+    fetchNewJob();
   };
 
   const handleDeleteJob = async (jobId) => {

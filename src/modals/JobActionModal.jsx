@@ -5,8 +5,8 @@ import TaskChecklist from "../components/TaskChecklist";
 import LocationAutocomplete from "../components/LocationAutocomplete";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
+import TaskSummaryBadge from "../components/TaskSummaryBadge";
 
-// --- Sub-component for the Edit View ---
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     title: job.title || "",
@@ -103,7 +103,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
         budget: formData.budget ? parseFloat(formData.budget) : null,
       })
       .eq("id", job.id)
-      .select()
+      .select('*, job_tasks(*)') // Re-fetch tasks to ensure sync
       .single();
 
     if (jobUpdateError) {
@@ -142,7 +142,14 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
       toast.success("Job updated successfully!");
     }
     
-    onSave(updatedJobData);
+    // Fetch the final state of the job with all tasks to update the UI correctly
+    const { data: finalJobData, error: finalJobError } = await supabase
+        .from('jobs')
+        .select('*, job_tasks(*)')
+        .eq('id', job.id)
+        .single();
+        
+    onSave(finalJobError ? updatedJobData : finalJobData);
     setSaving(false);
   };
 
@@ -221,10 +228,9 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   );
 }
 
-// --- Main Modal Component ---
 export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, currentUserId, userRole }) {
-  const [tasks, setTasks] = useState([]);
-  const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+  const [tasks, setTasks] = useState(job.job_tasks || []);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
 
@@ -232,18 +238,10 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const isJobAccepted = !!job.provider_id;
   const canEdit = isJobOwner && !isJobAccepted;
 
-  const fetchTasks = useCallback(async () => {
-    if (!job.id) return;
-    setIsLoadingTasks(true);
-    const { data, error } = await supabase.from('job_tasks').select('*').eq('job_id', job.id).order('created_at');
-    if (error) { toast.error("Could not fetch job tasks.") } else { setTasks(data) }
-    setIsLoadingTasks(false);
-  }, [job.id]);
-
   useEffect(() => {
     setIsEditMode(false);
-    fetchTasks();
-  }, [job, fetchTasks]);
+    setTasks(job.job_tasks || []);
+  }, [job]);
 
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
@@ -263,34 +261,51 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     setTasks(newTasks);
 
     const allTasksDone = newTasks.every(t => t.is_done);
-    let finalUpdatedJob = { ...job };
+    
+    let updatedJobForState = { ...job, job_tasks: newTasks };
 
     if (allTasksDone && job.status !== 'completed') {
       const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select().single();
       if (data && !error) {
         toast.success('Job complete!');
-        finalUpdatedJob = data;
+        updatedJobForState = { ...updatedJobForState, ...data };
       }
     } else if (!allTasksDone && job.status === 'completed') {
       const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select().single();
       if (data && !error) {
         toast.success("Job status reverted.");
-        finalUpdatedJob = data;
+        updatedJobForState = { ...updatedJobForState, ...data };
       }
     }
     
-    onChecklistUpdate(finalUpdatedJob);
+    onChecklistUpdate(updatedJobForState);
     setLoadingTaskId(null);
   };
   
   const handleAcceptJob = async () => {
-    const { data, error } = await supabase.from('jobs').update({ provider_id: currentUserId, status: 'in_progress' }).eq('id', job.id).is('provider_id', null).select().single();
+    const { data, error } = await supabase
+      .from('jobs')
+      .update({ provider_id: currentUserId, status: 'in_progress' })
+      .eq('id', job.id)
+      .is('provider_id', null)
+      .select() // Only selects the updated job fields, not the tasks
+      .single();
+
     if (error || !data) {
       toast.error("Failed to accept job.");
       onClose();
     } else {
       toast.success("Job accepted!");
-      onChecklistUpdate(data);
+
+      // --- FIX IS HERE ---
+      // Manually combine the updated job data with the existing tasks
+      // from the original 'job' prop to create a complete object.
+      const updatedJobWithTasks = {
+        ...data,
+        job_tasks: job.job_tasks, 
+      };
+      
+      onChecklistUpdate(updatedJobWithTasks);
     }
   };
 
@@ -317,11 +332,14 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
           />
         ) : (
           <>
-            <div className="flex justify-between items-start">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">Job Details</h2>
+            <div className="flex justify-between items-start mb-2">
+              <h2 className="text-xl font-bold text-gray-800">Job Details</h2>
               <JobStatusBadge job={job} currentUserId={currentUserId} userRole={userRole} />
             </div>
-            <div className="space-y-4 mb-6">
+            
+            <TaskSummaryBadge job={job} />
+
+            <div className="space-y-4 my-6">
               {detailItem("Title", job.title)}
               {detailItem("Location", job.location)}
               {detailItem("Date", new Date(job.date).toLocaleDateString())}
