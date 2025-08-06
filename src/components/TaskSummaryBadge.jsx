@@ -8,7 +8,6 @@ export default function TaskSummaryBadge({ job, className = '' }) {
   const totalTasks = job.job_tasks.length;
   const completedTasks = job.job_tasks.filter(task => task.is_done).length;
 
-  // Don't render the badge if there are no tasks
   if (totalTasks === 0) {
     return null;
   }
@@ -21,7 +20,8 @@ export default function TaskSummaryBadge({ job, className = '' }) {
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeColor} ${className}`}>
-      <span role="img" aria-label="Tasks" className="mr-1">🧹</span>
+      {/* --- This is the updated line --- */}
+      <span role="img" aria-label="Tasks" className="mr-1.5">📋</span>
       {completedTasks} / {totalTasks} Tasks
     </span>
   );

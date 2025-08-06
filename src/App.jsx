@@ -23,9 +23,29 @@ function Header({ session, onLogout }) {
   );
 }
 
-function FilterControls({ filter, setFilter, sort, setSort, userRole }) {
+function FilterControls({ view, setView, filter, setFilter, sort, setSort, userRole }) {
   return (
-    <div className="bg-white p-4 rounded-md shadow-sm border mb-6">
+    <div className="bg-white p-4 rounded-md shadow-sm border mb-6 space-y-4">
+      {userRole === 'service_provider' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">View</label>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setView('all')}
+              className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              All Jobs
+            </button>
+            <button
+              onClick={() => setView('mine')}
+              className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'mine' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              My Jobs
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="filter" className="block text-sm font-medium text-gray-700 mb-1">
@@ -64,27 +84,27 @@ function FilterControls({ filter, setFilter, sort, setSort, userRole }) {
   );
 }
 
-function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUserId, userRole, filter, setFilter, sort, setSort }) {
+function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
   return (
     <div className="space-y-8">
       <JobForm user={user} onNewJob={onNewJob} />
-      <FilterControls filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} userRole={userRole} />
+      <FilterControls filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} userRole={userRole} view={view} setView={setView} />
       <JobList jobs={jobs} loading={loading} onSelectJob={onSelectJob} currentUserId={currentUserId} userRole={userRole} />
     </div>
   );
 }
 
-function CleanerDashboard({ jobs, loading, onSelectJob, currentUserId, userRole, filter, setFilter, sort, setSort }) {
+function CleanerDashboard({ jobs, loading, onSelectJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
   return (
     <div className="bg-white shadow border rounded-md p-6">
       <div className="flex justify-between items-center">
         <div>
-            <h2 className="text-2xl font-bold text-gray-800">Available Jobs</h2>
-            <p className="mt-2 text-gray-600">This is where a cleaner will see a list of jobs to accept.</p>
+          <h2 className="text-2xl font-bold text-gray-800">Available Jobs</h2>
+          <p className="mt-2 text-gray-600">Browse all open jobs or view the jobs you have accepted.</p>
         </div>
       </div>
       <div className="mt-6">
-        <FilterControls filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} userRole={userRole} />
+        <FilterControls filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} userRole={userRole} view={view} setView={setView} />
         <JobList jobs={jobs} loading={loading} onSelectJob={onSelectJob} currentUserId={currentUserId} userRole={userRole} />
       </div>
     </div>
@@ -101,112 +121,105 @@ export default function App() {
 
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
+  const [view, setView] = useState('all');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setShowUpdatePassword(true);
       setSession(session);
-      if (event === 'SIGNED_OUT') setProfile(null);
+      if (event === 'SIGNED_OUT') {
+        setProfile(null);
+        setJobs([]);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
 
   const fetchInitialData = async () => {
-    setLoading(true);
     if (!session) {
-        setLoading(false);
-        return;
+      setLoading(false);
+      return;
     }
     
+    setLoading(true);
     const { data: profileData, error: profileError } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-    if (profileError) {
-        toast.error('Error fetching user profile.');
-    } else {
-        setProfile(profileData);
-    }
+    if (profileError) toast.error('Error fetching user profile.');
+    else setProfile(profileData);
 
-    const { data: jobsData, error: jobsError } = await supabase
-      .from('jobs')
-      .select('*, job_tasks(*)')
-      .order('created_at', { ascending: false });
-
-    if (jobsError) {
-        toast.error('Could not fetch jobs.');
-    } else {
-        setJobs(jobsData);
-    }
+    const { data: jobsData, error: jobsError } = await supabase.from('jobs').select('*, job_tasks(*)').order('created_at', { ascending: false });
+    if (jobsError) toast.error('Could not fetch jobs.');
+    else setJobs(jobsData || []);
+    
     setLoading(false);
   };
-  
+
   useEffect(() => {
     fetchInitialData();
-
     const jobsChannel = supabase
       .channel('realtime:jobs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, (payload) => {
-        fetchInitialData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => fetchInitialData())
       .subscribe();
 
     return () => supabase.removeChannel(jobsChannel);
   }, [session]);
 
   const displayedJobs = useMemo(() => {
-    let filtered = [...jobs];
+    let baseJobs = [...jobs];
 
-    if (filter !== 'all') {
-      filtered = filtered.filter(job => {
-        const isCompleted = job.status === 'completed';
-        const isAccepted = !!job.provider_id;
-
-        if (filter === 'listed') return !isAccepted && !isCompleted;
-        if (filter === 'accepted') return isAccepted && !isCompleted;
-        if (filter === 'completed') return isCompleted;
-        return true;
-      });
+    if (profile?.role === 'customer') {
+      baseJobs = baseJobs.filter(job => job.client_id === session.user.id);
+    } else if (profile?.role === 'service_provider' && view === 'mine') {
+      baseJobs = baseJobs.filter(job => job.provider_id === session.user.id);
     }
 
-    switch (sort) {
-      case 'oldest':
-        filtered.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        break;
-      case 'budget_high':
-        filtered.sort((a, b) => (b.budget || 0) - (a.budget || 0));
-        break;
-      case 'budget_low':
-        filtered.sort((a, b) => (a.budget || 0) - (b.budget || 0));
-        break;
-      case 'newest':
-      default:
-        filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        break;
-    }
+    let filtered = baseJobs.filter(job => {
+      if (filter === 'all') return true;
+      const isCompleted = job.status === 'completed';
+      const isAccepted = !!job.provider_id;
+      if (filter === 'listed') return !isAccepted && !isCompleted;
+      if (filter === 'accepted') return isAccepted && !isCompleted;
+      if (filter === 'completed') return isCompleted;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      switch (sort) {
+        case 'oldest':
+          return new Date(a.created_at) - new Date(b.created_at);
+        case 'budget_high':
+          return (b.budget || 0) - (a.budget || 0);
+        case 'budget_low':
+          return (a.budget || 0) - (b.budget || 0);
+        case 'newest':
+        default:
+          return new Date(b.created_at) - new Date(a.created_at);
+      }
+    });
 
     return filtered;
-  }, [jobs, filter, sort]);
+  }, [jobs, filter, sort, view, profile, session]);
 
-  const handleNewJob = (newJob) => {
+  const handleNewJob = () => {
     fetchInitialData();
   };
 
   const handleDeleteJob = async (jobId) => {
     const { error } = await supabase.from("jobs").delete().eq("id", jobId);
-    if (error) {
-      toast.error(`Failed to delete job: ${error.message}`);
-    } else {
+    if (error) toast.error(`Failed to delete job: ${error.message}`);
+    else {
       toast.success("Job deleted!");
       setSelectedJob(null);
     }
   };
 
   const handleUpdateJob = (updatedJob) => {
-    setJobs((prevJobs) => prevJobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
-    setSelectedJob(updatedJob); // Also update the selected job to reflect changes immediately
+    setJobs(prevJobs => prevJobs.map(j => (j.id === updatedJob.id ? updatedJob : j)));
+    setSelectedJob(updatedJob);
   };
   
   const handleChecklistUpdate = (updatedJob) => {
-    setJobs((prevJobs) => prevJobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    setJobs(prevJobs => prevJobs.map(j => (j.id === updatedJob.id ? updatedJob : j)));
     setSelectedJob(updatedJob);
   };
 
@@ -219,10 +232,9 @@ export default function App() {
       onSelectJob: setSelectedJob,
       currentUserId: session.user.id,
       userRole: profile.role,
-      filter: filter,
-      setFilter: setFilter,
-      sort: sort,
-      setSort: setSort,
+      filter, setFilter,
+      sort, setSort,
+      view, setView,
     };
 
     if (profile.role === 'customer') {
@@ -237,7 +249,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       <Toaster position="top-center" reverseOrder={false} />
-      <Header session={session} onLogout={async () => { await supabase.auth.signOut(); setSession(null); setProfile(null); }} />
+      <Header session={session} onLogout={async () => { await supabase.auth.signOut(); }} />
       <main className="max-w-4xl mx-auto py-6">{!session ? <Auth /> : renderDashboard()}</main>
 
       {selectedJob && profile && (
