@@ -238,24 +238,16 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
     const isNowDone = !taskToToggle.is_done;
-
-    const { data: updatedTask, error: taskError } = await supabase
-      .from('job_tasks').update({ is_done: isNowDone, completed_at: isNowDone ? new Date().toISOString() : null, completed_by: currentUserId })
-      .eq('id', taskToToggle.id).select().single();
-
+    const { data: updatedTask, error: taskError } = await supabase.from('job_tasks').update({ is_done: isNowDone, completed_at: isNowDone ? new Date().toISOString() : null, completed_by: currentUserId }).eq('id', taskToToggle.id).select().single();
     if (taskError) {
       toast.error('Task update failed.');
       setLoadingTaskId(null);
       return;
     }
-
     const newTasks = tasks.map(t => (t.id === updatedTask.id ? updatedTask : t));
     setTasks(newTasks);
-
     const allTasksDone = newTasks.every(t => t.is_done);
-    
     let updatedJobForState = { ...job, job_tasks: newTasks };
-
     if (allTasksDone && job.status !== 'completed') {
       const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select().single();
       if (data && !error) {
@@ -269,24 +261,12 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
         updatedJobForState = { ...updatedJobForState, ...data };
       }
     }
-    
     onChecklistUpdate(updatedJobForState);
     setLoadingTaskId(null);
   };
   
   const handleAcceptJob = async () => {
-    const { data, error } = await supabase
-      .from('jobs')
-      .update({ 
-        provider_id: currentUserId, 
-        status: 'in_progress',
-        accepted_at: new Date().toISOString()
-      })
-      .eq('id', job.id)
-      .is('provider_id', null)
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from('jobs').update({ provider_id: currentUserId, status: 'in_progress', accepted_at: new Date().toISOString() }).eq('id', job.id).is('provider_id', null).select().single();
     if (error || !data) {
       toast.error("Failed to accept job.");
       onClose();
@@ -295,6 +275,17 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       const updatedJobWithTasks = { ...data, job_tasks: job.job_tasks };
       onChecklistUpdate(updatedJobWithTasks);
     }
+  };
+
+  const handleShareJob = () => {
+    const jobUrl = `${window.location.origin}/job/${job.id}`;
+    navigator.clipboard.writeText(jobUrl)
+      .then(() => {
+        toast.success('Job link copied to clipboard!');
+      })
+      .catch(err => {
+        toast.error('Failed to copy link.');
+      });
   };
 
   const detailItem = (label, value) => (
@@ -357,10 +348,15 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {job.job_completed_at && <p>Completed: {formatTimestamp(job.job_completed_at)}</p>}
             </div>
 
-            <div className="flex justify-end gap-4 border-t pt-4 mt-4">
-              <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
-              {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
-              {userRole === 'service_provider' && !job.provider_id && (<button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>)}
+            <div className="flex justify-between items-center border-t pt-4 mt-4">
+              <button onClick={handleShareJob} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm font-semibold">
+                Copy Link
+              </button>
+              <div className="flex gap-4">
+                <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
+                {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
+                {userRole === 'service_provider' && !job.provider_id && (<button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>)}
+              </div>
             </div>
           </>
         )}
