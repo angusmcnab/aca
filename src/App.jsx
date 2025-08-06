@@ -169,8 +169,12 @@ export default function App() {
 
     if (profile?.role === 'customer') {
       baseJobs = baseJobs.filter(job => job.client_id === session.user.id);
-    } else if (profile?.role === 'service_provider' && view === 'mine') {
-      baseJobs = baseJobs.filter(job => job.provider_id === session.user.id);
+    } else if (profile?.role === 'service_provider') {
+      if (view === 'mine') {
+        baseJobs = baseJobs.filter(job => job.provider_id === session.user.id);
+      } else {
+        baseJobs = baseJobs.filter(job => job.provider_id === null);
+      }
     }
 
     let filtered = baseJobs.filter(job => {
