@@ -103,7 +103,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
         budget: formData.budget ? parseFloat(formData.budget) : null,
       })
       .eq("id", job.id)
-      .select('*, job_tasks(*)') // Re-fetch tasks to ensure sync
+      .select('*, job_tasks(*)')
       .single();
 
     if (jobUpdateError) {
@@ -113,12 +113,10 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     }
 
     const initialTaskMap = new Map(initialTasks.map(t => [t.id, t]));
-    const currentTaskMap = new Map(tasks.map(t => [t.id, t]));
-    
     const tasksToAdd = tasks.filter(t => t.id < 0).map(({ category, task_description }) => ({ job_id: job.id, category, task_description }));
     const tasksToUpdate = tasks.filter(t => t.id > 0 && (t.category !== initialTaskMap.get(t.id)?.category || t.task_description !== initialTaskMap.get(t.id)?.task_description))
                                .map(({ id, category, task_description }) => ({ id, category, task_description }));
-    const tasksToDelete = initialTasks.filter(t => !currentTaskMap.has(t.id)).map(t => t.id);
+    const tasksToDelete = initialTasks.filter(t => !tasks.some(ct => ct.id === t.id)).map(t => t.id);
 
     let taskError = null;
     if (tasksToAdd.length > 0) {
@@ -142,14 +140,8 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
       toast.success("Job updated successfully!");
     }
     
-    // Fetch the final state of the job with all tasks to update the UI correctly
-    const { data: finalJobData, error: finalJobError } = await supabase
-        .from('jobs')
-        .select('*, job_tasks(*)')
-        .eq('id', job.id)
-        .single();
-        
-    onSave(finalJobError ? updatedJobData : finalJobData);
+    const { data: finalJobData } = await supabase.from('jobs').select('*, job_tasks(*)').eq('id', job.id).single();
+    onSave(finalJobData || updatedJobData);
     setSaving(false);
   };
 
@@ -285,10 +277,14 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const handleAcceptJob = async () => {
     const { data, error } = await supabase
       .from('jobs')
-      .update({ provider_id: currentUserId, status: 'in_progress' })
+      .update({ 
+        provider_id: currentUserId, 
+        status: 'in_progress',
+        accepted_at: new Date().toISOString()
+      })
       .eq('id', job.id)
       .is('provider_id', null)
-      .select() // Only selects the updated job fields, not the tasks
+      .select()
       .single();
 
     if (error || !data) {
@@ -296,15 +292,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       onClose();
     } else {
       toast.success("Job accepted!");
-
-      // --- FIX IS HERE ---
-      // Manually combine the updated job data with the existing tasks
-      // from the original 'job' prop to create a complete object.
-      const updatedJobWithTasks = {
-        ...data,
-        job_tasks: job.job_tasks, 
-      };
-      
+      const updatedJobWithTasks = { ...data, job_tasks: job.job_tasks };
       onChecklistUpdate(updatedJobWithTasks);
     }
   };
@@ -315,6 +303,12 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       <p className="mt-1 text-gray-900">{value || <span className="text-gray-400">Not specified</span>}</p>
     </div>
   );
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
@@ -346,19 +340,24 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Time", job.time)}
               {detailItem("Budget", job.budget ? `£${job.budget}` : 'Not specified')}
               <div>
-                {isLoadingTasks ? (<p>Loading tasks...</p>) : (
-                  <TaskChecklist
+                <TaskChecklist
                     tasks={tasks}
                     userId={currentUserId}
                     userRole={userRole}
                     providerId={job.provider_id}
                     onToggleTask={handleToggleTask}
                     loadingTaskId={loadingTaskId}
-                  />
-                )}
+                />
               </div>
             </div>
-            <div className="flex justify-end gap-4 border-t pt-4">
+
+            <div className="text-xs text-gray-400 space-y-1 border-t pt-4 mt-4">
+              <p>Created: {formatTimestamp(job.created_at)}</p>
+              {job.accepted_at && <p>Accepted: {formatTimestamp(job.accepted_at)}</p>}
+              {job.job_completed_at && <p>Completed: {formatTimestamp(job.job_completed_at)}</p>}
+            </div>
+
+            <div className="flex justify-end gap-4 border-t pt-4 mt-4">
               <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
               {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
               {userRole === 'service_provider' && !job.provider_id && (<button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>)}

@@ -7,7 +7,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [view, setView] = useState('sign_in');
-  const [role, setRole] = useState('client');
+  const [role, setRole] = useState('customer');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -96,11 +96,20 @@ export default function Auth() {
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Sign up as a:</label>
                 <div className="grid grid-cols-2 gap-4">
-                    <button type="button" onClick={() => setRole('client')} className={`p-3 border rounded-md text-center text-sm font-semibold transition-colors ${role === 'client' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
-                        Client <span className="block text-xs font-normal">I need a service</span>
+                    {/* --- UPDATED BUTTONS --- */}
+                    <button 
+                        type="button" 
+                        onClick={() => setRole('customer')} 
+                        className={`p-3 border rounded-md text-center text-sm font-semibold transition-colors ${role === 'customer' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Customer <span className="block text-xs font-normal">I need a service</span>
                     </button>
-                    <button type="button" onClick={() => setRole('cleaner')} className={`p-3 border rounded-md text-center text-sm font-semibold transition-colors ${role === 'cleaner' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
-                        Cleaner <span className="block text-xs font-normal">I provide a service</span>
+                    <button 
+                        type="button" 
+                        onClick={() => setRole('service_provider')} 
+                        className={`p-3 border rounded-md text-center text-sm font-semibold transition-colors ${role === 'service_provider' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Service Provider <span className="block text-xs font-normal">I provide a service</span>
                     </button>
                 </div>
             </div>
