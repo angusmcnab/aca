@@ -222,18 +222,32 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
 
 export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, currentUserId, userRole }) {
   const [tasks, setTasks] = useState(job.job_tasks || []);
-  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
   const isJobAccepted = !!job.provider_id;
   const canEdit = isJobOwner && !isJobAccepted;
 
   useEffect(() => {
+    const checkInterest = async () => {
+      if (userRole === 'service_provider' && job.id && currentUserId) {
+        const { data } = await supabase
+          .from('job_interests')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('provider_id', currentUserId)
+          .maybeSingle();
+        
+        setHasExpressedInterest(!!data);
+      }
+    };
+    
+    checkInterest();
     setIsEditMode(false);
     setTasks(job.job_tasks || []);
-  }, [job]);
+  }, [job, currentUserId, userRole]);
 
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
@@ -265,27 +279,28 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     setLoadingTaskId(null);
   };
   
-  const handleAcceptJob = async () => {
-    const { data, error } = await supabase.from('jobs').update({ provider_id: currentUserId, status: 'in_progress', accepted_at: new Date().toISOString() }).eq('id', job.id).is('provider_id', null).select().single();
-    if (error || !data) {
-      toast.error("Failed to accept job.");
-      onClose();
+  const handleExpressInterest = async (jobId) => {
+    const { error } = await supabase
+      .from('job_interests')
+      .insert({ job_id: jobId, provider_id: currentUserId });
+  
+    if (error) {
+      if (error.message.includes('duplicate')) {
+        toast.error("You've already shown interest in this job.");
+      } else {
+        toast.error("Failed to express interest.");
+      }
     } else {
-      toast.success("Job accepted!");
-      const updatedJobWithTasks = { ...data, job_tasks: job.job_tasks };
-      onChecklistUpdate(updatedJobWithTasks);
+      toast.success("Interest recorded! The customer will review applicants.");
+      setHasExpressedInterest(true);
     }
   };
 
   const handleShareJob = () => {
     const jobUrl = `${window.location.origin}/job/${job.id}`;
     navigator.clipboard.writeText(jobUrl)
-      .then(() => {
-        toast.success('Job link copied to clipboard!');
-      })
-      .catch(err => {
-        toast.error('Failed to copy link.');
-      });
+      .then(() => toast.success('Job link copied to clipboard!'))
+      .catch(() => toast.error('Failed to copy link.'));
   };
 
   const detailItem = (label, value) => (
@@ -355,7 +370,20 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               <div className="flex gap-4">
                 <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
                 {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
-                {userRole === 'service_provider' && !job.provider_id && (<button onClick={handleAcceptJob} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Accept Job</button>)}
+                
+                {userRole === 'service_provider' && !job.provider_id && (
+                  <button
+                    onClick={() => handleExpressInterest(job.id)}
+                    disabled={hasExpressedInterest}
+                    className={`px-4 py-2 font-semibold text-white rounded transition-colors ${
+                      hasExpressedInterest
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    {hasExpressedInterest ? "Interest Expressed" : "I'm Interested"}
+                  </button>
+                )}
               </div>
             </div>
           </>
