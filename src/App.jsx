@@ -8,6 +8,7 @@ import UpdatePasswordModal from './modals/UpdatePasswordModal';
 import { Toaster, toast } from 'react-hot-toast';
 
 function Header({ session, onLogout }) {
+  // ... (this component remains the same)
   return (
     <header className="bg-white shadow">
       <div className="max-w-4xl mx-auto py-4 px-4 flex justify-between items-center">
@@ -24,6 +25,7 @@ function Header({ session, onLogout }) {
 }
 
 function FilterControls({ view, setView, filter, setFilter, sort, setSort, userRole }) {
+  // ... (this component remains the same)
   return (
     <div className="bg-white p-4 rounded-md shadow-sm border mb-6 space-y-4">
       {userRole === 'service_provider' && (
@@ -85,6 +87,7 @@ function FilterControls({ view, setView, filter, setFilter, sort, setSort, userR
 }
 
 function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
+  // ... (this component remains the same)
   return (
     <div className="space-y-8">
       <JobForm user={user} onNewJob={onNewJob} />
@@ -95,6 +98,7 @@ function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUs
 }
 
 function CleanerDashboard({ jobs, loading, onSelectJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
+  // ... (this component remains the same)
   return (
     <div className="bg-white shadow border rounded-md p-6">
       <div className="flex justify-between items-center">
@@ -136,7 +140,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchInitialData = async () => {
+
+const fetchInitialData = async () => {
     if (!session) {
       setLoading(false);
       return;
@@ -147,12 +152,22 @@ export default function App() {
     if (profileError) toast.error('Error fetching user profile.');
     else setProfile(profileData);
 
-    const { data: jobsData, error: jobsError } = await supabase.from('jobs').select('*, job_tasks(*)').order('created_at', { ascending: false });
-    if (jobsError) toast.error('Could not fetch jobs.');
-    else setJobs(jobsData || []);
+    // This is the updated, more explicit query.
+    const { data: jobsData, error: jobsError } = await supabase
+      .from('jobs')
+      .select('*, job_tasks(*), client:profiles!client_id(email), provider:profiles!provider_id(email)')
+      .order('created_at', { ascending: false });
+
+    if (jobsError) {
+      toast.error('Could not fetch jobs.');
+      console.error(jobsError); 
+    } else {
+      setJobs(jobsData || []);
+    }
     
     setLoading(false);
   };
+  // --- END OF FUNCTION TO FIX ---
 
   useEffect(() => {
     fetchInitialData();
@@ -165,6 +180,7 @@ export default function App() {
   }, [session]);
 
   const displayedJobs = useMemo(() => {
+    // ... (this logic remains the same)
     let baseJobs = [...jobs];
 
     if (profile?.role === 'customer') {
@@ -209,6 +225,7 @@ export default function App() {
   };
 
   const handleDeleteJob = async (jobId) => {
+    // ... (this logic remains the same)
     const { error } = await supabase.from("jobs").delete().eq("id", jobId);
     if (error) toast.error(`Failed to delete job: ${error.message}`);
     else {
@@ -228,6 +245,7 @@ export default function App() {
   };
 
   const renderDashboard = () => {
+    // ... (this logic remains the same)
     if (!profile) return <div className="text-center p-4">Loading user profile...</div>;
     
     const dashboardProps = {

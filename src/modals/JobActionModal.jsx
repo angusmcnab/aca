@@ -140,7 +140,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
       toast.success("Job updated successfully!");
     }
     
-    const { data: finalJobData } = await supabase.from('jobs').select('*, job_tasks(*)').eq('id', job.id).single();
+    const { data: finalJobData } = await supabase.from('jobs').select('*, job_tasks(*), client:profiles(email), provider:profiles(email)').eq('id', job.id).single();
     onSave(finalJobData || updatedJobData);
     setSaving(false);
   };
@@ -226,7 +226,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const [isEditMode, setIsEditMode] = useState(false);
   const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
   const [interestedProviders, setInterestedProviders] = useState([]);
-  const [isAssigning, setIsAssigning] = useState(false); // --- Add loading state for assigning
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
   const isJobAccepted = !!job.provider_id;
@@ -267,7 +267,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     setTasks(job.job_tasks || []);
   }, [job, currentUserId, userRole, isJobOwner, isJobAccepted]);
 
-  // --- NEW FUNCTION TO HANDLE JOB ASSIGNMENT ---
   const handleAssignJob = async (providerId) => {
     setIsAssigning(true);
     const { data: updatedJob, error } = await supabase.rpc('assign_job_to_provider', {
@@ -279,11 +278,10 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       toast.error(`Failed to assign job: ${error.message}`);
     } else {
       toast.success("Job assigned successfully!");
-      // The RPC returns an array with the single updated job record.
-      // onUpdate will refresh the app's state and this modal's view.
-      if (updatedJob && updatedJob.length > 0) {
-        onUpdate(updatedJob[0]);
-      }
+      // The RPC now returns the full, single job object
+      // We also need to manually add the tasks back in, as the RPC doesn't return them.
+      const finalUpdatedJob = { ...updatedJob, job_tasks: job.job_tasks };
+      onUpdate(finalUpdatedJob);
     }
     setIsAssigning(false);
   };
@@ -302,13 +300,13 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     const allTasksDone = newTasks.every(t => t.is_done);
     let updatedJobForState = { ...job, job_tasks: newTasks };
     if (allTasksDone && job.status !== 'completed') {
-      const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select().single();
+      const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select('*, client:profiles(email), provider:profiles(email)').single();
       if (data && !error) {
         toast.success('Job complete!');
         updatedJobForState = { ...updatedJobForState, ...data };
       }
     } else if (!allTasksDone && job.status === 'completed') {
-      const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select().single();
+      const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select('*, client:profiles(email), provider:profiles(email)').single();
       if (data && !error) {
         toast.success("Job status reverted.");
         updatedJobForState = { ...updatedJobForState, ...data };
@@ -381,6 +379,14 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
             <div className="space-y-4 my-6">
               {detailItem("Title", job.title)}
               {detailItem("Location", job.location)}
+
+              {isJobAccepted && job.provider && userRole === 'customer' && (
+                detailItem("Assigned To", job.provider.email)
+              )}
+              {isJobAccepted && job.client && userRole === 'service_provider' && (
+                detailItem("Client", job.client.email)
+              )}
+
               {detailItem("Date", new Date(job.date).toLocaleDateString())}
               {detailItem("Time", job.time)}
               {detailItem("Budget", job.budget ? `£${job.budget}` : 'Not specified')}
@@ -403,7 +409,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                   {interestedProviders.map(provider => (
                     <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
                       <p className="text-gray-700">{provider.email || 'Provider email not available'}</p>
-                      {/* --- UPDATE THE BUTTON --- */}
                       <button 
                         onClick={() => handleAssignJob(provider.provider_id)}
                         disabled={isAssigning}
