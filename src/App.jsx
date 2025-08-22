@@ -1,21 +1,27 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './supabase';
 import Auth from './Auth';
+import Account from './Account';
 import JobForm from './JobForm';
 import JobList from './JobList';
 import JobActionModal from './modals/JobActionModal';
 import UpdatePasswordModal from './modals/UpdatePasswordModal';
 import { Toaster, toast } from 'react-hot-toast';
 
-function Header({ session, onLogout }) {
-  // ... (this component remains the same)
+function Header({ session, onLogout, onShowAccount, onShowDashboard }) {
   return (
     <header className="bg-white shadow">
       <div className="max-w-4xl mx-auto py-4 px-4 flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">CleanerApp MkV</h1>
+        <h1
+          className="text-3xl font-bold text-gray-900 cursor-pointer"
+          onClick={onShowDashboard}
+        >
+          CleanerApp MkV
+        </h1>
         {session && (
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-600">{session.user.email}</span>
+            <button onClick={onShowAccount} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-semibold">Account</button>
             <button onClick={onLogout} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-semibold">Logout</button>
           </div>
         )}
@@ -25,7 +31,6 @@ function Header({ session, onLogout }) {
 }
 
 function FilterControls({ view, setView, filter, setFilter, sort, setSort, userRole }) {
-  // ... (this component remains the same)
   return (
     <div className="bg-white p-4 rounded-md shadow-sm border mb-6 space-y-4">
       {userRole === 'service_provider' && (
@@ -87,7 +92,6 @@ function FilterControls({ view, setView, filter, setFilter, sort, setSort, userR
 }
 
 function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
-  // ... (this component remains the same)
   return (
     <div className="space-y-8">
       <JobForm user={user} onNewJob={onNewJob} />
@@ -98,7 +102,6 @@ function ClientDashboard({ user, jobs, loading, onSelectJob, onNewJob, currentUs
 }
 
 function CleanerDashboard({ jobs, loading, onSelectJob, currentUserId, userRole, filter, setFilter, sort, setSort, view, setView }) {
-  // ... (this component remains the same)
   return (
     <div className="bg-white shadow border rounded-md p-6">
       <div className="flex justify-between items-center">
@@ -122,6 +125,7 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showUpdatePassword, setShowUpdatePassword] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
 
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
@@ -140,8 +144,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-
-const fetchInitialData = async () => {
+  const fetchInitialData = async () => {
     if (!session) {
       setLoading(false);
       return;
@@ -152,10 +155,10 @@ const fetchInitialData = async () => {
     if (profileError) toast.error('Error fetching user profile.');
     else setProfile(profileData);
 
-    // This is the updated, more explicit query.
+    // This query now fetches all the profile details for both client and provider
     const { data: jobsData, error: jobsError } = await supabase
       .from('jobs')
-      .select('*, job_tasks(*), client:profiles!client_id(email), provider:profiles!provider_id(email)')
+      .select('*, job_tasks(*), client:profiles!client_id(email, full_name, company_name, avatar_url), provider:profiles!provider_id(email, full_name, company_name, avatar_url)')
       .order('created_at', { ascending: false });
 
     if (jobsError) {
@@ -167,7 +170,6 @@ const fetchInitialData = async () => {
     
     setLoading(false);
   };
-  // --- END OF FUNCTION TO FIX ---
 
   useEffect(() => {
     fetchInitialData();
@@ -180,7 +182,6 @@ const fetchInitialData = async () => {
   }, [session]);
 
   const displayedJobs = useMemo(() => {
-    // ... (this logic remains the same)
     let baseJobs = [...jobs];
 
     if (profile?.role === 'customer') {
@@ -189,7 +190,7 @@ const fetchInitialData = async () => {
       if (view === 'mine') {
         baseJobs = baseJobs.filter(job => job.provider_id === session.user.id);
       } else {
-        baseJobs = baseJobs.filter(job => job.provider_id === null);
+        baseJobs = baseJobs.filter(job => !job.provider_id);
       }
     }
 
@@ -225,7 +226,6 @@ const fetchInitialData = async () => {
   };
 
   const handleDeleteJob = async (jobId) => {
-    // ... (this logic remains the same)
     const { error } = await supabase.from("jobs").delete().eq("id", jobId);
     if (error) toast.error(`Failed to delete job: ${error.message}`);
     else {
@@ -245,7 +245,6 @@ const fetchInitialData = async () => {
   };
 
   const renderDashboard = () => {
-    // ... (this logic remains the same)
     if (!profile) return <div className="text-center p-4">Loading user profile...</div>;
     
     const dashboardProps = {
@@ -271,8 +270,24 @@ const fetchInitialData = async () => {
   return (
     <div className="min-h-screen bg-gray-100">
       <Toaster position="top-center" reverseOrder={false} />
-      <Header session={session} onLogout={async () => { await supabase.auth.signOut(); }} />
-      <main className="max-w-4xl mx-auto py-6">{!session ? <Auth /> : renderDashboard()}</main>
+      <Header 
+        session={session} 
+        onLogout={async () => { 
+          await supabase.auth.signOut();
+          setShowAccount(false);
+        }}
+        onShowAccount={() => setShowAccount(true)}
+        onShowDashboard={() => setShowAccount(false)}
+      />
+      <main className="max-w-4xl mx-auto py-6">
+        {!session ? (
+          <Auth />
+        ) : showAccount ? (
+          <Account key={session.user.id} session={session} onBack={() => setShowAccount(false)} />
+        ) : (
+          renderDashboard()
+        )}
+      </main>
 
       {selectedJob && profile && (
         <JobActionModal

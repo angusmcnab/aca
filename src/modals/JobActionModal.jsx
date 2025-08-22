@@ -6,6 +6,7 @@ import LocationAutocomplete from "../components/LocationAutocomplete";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
 import TaskSummaryBadge from "../components/TaskSummaryBadge";
+import Avatar from "../components/Avatar"; // We'll need this for the provider's avatar
 
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
@@ -278,10 +279,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       toast.error(`Failed to assign job: ${error.message}`);
     } else {
       toast.success("Job assigned successfully!");
-      // The RPC now returns the full, single job object
-      // We also need to manually add the tasks back in, as the RPC doesn't return them.
-      const finalUpdatedJob = { ...updatedJob, job_tasks: job.job_tasks };
-      onUpdate(finalUpdatedJob);
+      onUpdate(updatedJob);
     }
     setIsAssigning(false);
   };
@@ -353,6 +351,11 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const getDisplayName = (profile) => {
+    if (!profile) return '...';
+    return profile.company_name || profile.full_name || profile.email;
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
@@ -381,10 +384,10 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Location", job.location)}
 
               {isJobAccepted && job.provider && userRole === 'customer' && (
-                detailItem("Assigned To", job.provider.email)
+                detailItem("Assigned To", getDisplayName(job.provider))
               )}
               {isJobAccepted && job.client && userRole === 'service_provider' && (
-                detailItem("Client", job.client.email)
+                detailItem("Client", getDisplayName(job.client))
               )}
 
               {detailItem("Date", new Date(job.date).toLocaleDateString())}
@@ -406,18 +409,31 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               <div className="border-t pt-4 mt-4">
                 <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
                 <ul className="mt-2 space-y-2">
-                  {interestedProviders.map(provider => (
-                    <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
-                      <p className="text-gray-700">{provider.email || 'Provider email not available'}</p>
-                      <button 
-                        onClick={() => handleAssignJob(provider.provider_id)}
-                        disabled={isAssigning}
-                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400"
-                      >
-                        {isAssigning ? 'Assigning...' : 'Assign Job'}
-                      </button>
-                    </li>
-                  ))}
+                  {interestedProviders.map(provider => {
+                    const displayName = provider.company_name || provider.full_name || provider.email;
+                    return (
+                      <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10">
+                            {/* We use a simplified Avatar component here for display only */}
+                            {provider.avatar_url ? (
+                              <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gray-300" />
+                            )}
+                          </div>
+                          <p className="font-semibold text-gray-700">{displayName}</p>
+                        </div>
+                        <button 
+                          onClick={() => handleAssignJob(provider.provider_id)}
+                          disabled={isAssigning}
+                          className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400"
+                        >
+                          {isAssigning ? '...' : 'Assign Job'}
+                        </button>
+                      </li>
+                    )}
+                  )}
                 </ul>
               </div>
             )}
