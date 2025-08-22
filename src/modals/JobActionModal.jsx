@@ -225,6 +225,8 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
+  const [interestedProviders, setInterestedProviders] = useState([]);
+  const [isAssigning, setIsAssigning] = useState(false); // --- Add loading state for assigning
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
   const isJobAccepted = !!job.provider_id;
@@ -244,10 +246,47 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       }
     };
     
+    const fetchInterestedProviders = async () => {
+      if (isJobOwner && !isJobAccepted) {
+        const { data, error } = await supabase.rpc('get_interested_providers', {
+          p_job_id: job.id,
+        });
+
+        if (error) {
+          toast.error("Could not fetch interested providers.");
+          console.error("Error fetching interested providers:", error.message);
+        } else {
+          setInterestedProviders(data);
+        }
+      }
+    };
+
     checkInterest();
+    fetchInterestedProviders();
     setIsEditMode(false);
     setTasks(job.job_tasks || []);
-  }, [job, currentUserId, userRole]);
+  }, [job, currentUserId, userRole, isJobOwner, isJobAccepted]);
+
+  // --- NEW FUNCTION TO HANDLE JOB ASSIGNMENT ---
+  const handleAssignJob = async (providerId) => {
+    setIsAssigning(true);
+    const { data: updatedJob, error } = await supabase.rpc('assign_job_to_provider', {
+      p_job_id: job.id,
+      p_provider_id: providerId
+    });
+
+    if (error) {
+      toast.error(`Failed to assign job: ${error.message}`);
+    } else {
+      toast.success("Job assigned successfully!");
+      // The RPC returns an array with the single updated job record.
+      // onUpdate will refresh the app's state and this modal's view.
+      if (updatedJob && updatedJob.length > 0) {
+        onUpdate(updatedJob[0]);
+      }
+    }
+    setIsAssigning(false);
+  };
 
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
@@ -356,6 +395,27 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                 />
               </div>
             </div>
+
+            {isJobOwner && !isJobAccepted && interestedProviders.length > 0 && (
+              <div className="border-t pt-4 mt-4">
+                <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
+                <ul className="mt-2 space-y-2">
+                  {interestedProviders.map(provider => (
+                    <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                      <p className="text-gray-700">{provider.email || 'Provider email not available'}</p>
+                      {/* --- UPDATE THE BUTTON --- */}
+                      <button 
+                        onClick={() => handleAssignJob(provider.provider_id)}
+                        disabled={isAssigning}
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400"
+                      >
+                        {isAssigning ? 'Assigning...' : 'Assign Job'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="text-xs text-gray-400 space-y-1 border-t pt-4 mt-4">
               <p>Created: {formatTimestamp(job.created_at)}</p>
