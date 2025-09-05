@@ -15,6 +15,7 @@ export default function JobForm({ user, onNewJob }) {
   const [currentTask, setCurrentTask] = useState('');
   const [tasks, setTasks] = useState([]);
   const [message, setMessage] = useState('');
+  const [interestLimit, setInterestLimit] = useState(5); // --- ADD THIS STATE ---
 
   const handleAddTask = () => {
     if (!currentTask.trim()) {
@@ -60,6 +61,7 @@ export default function JobForm({ user, onNewJob }) {
     }
 
     setLoading(true);
+    // --- UPDATE THE INSERT STATEMENT ---
     const { data: newJob, error: jobError } = await supabase
       .from('jobs')
       .insert({
@@ -69,6 +71,7 @@ export default function JobForm({ user, onNewJob }) {
         date,
         time,
         budget: budget ? parseFloat(budget) : null,
+        interest_limit: interestLimit, // --- ADD THIS LINE ---
       })
       .select()
       .single();
@@ -103,6 +106,7 @@ export default function JobForm({ user, onNewJob }) {
     setCurrentCategory('');
     setCurrentTask('');
     setMessage('');
+    setInterestLimit(5); // --- RESET THE STATE ---
     setLoading(false);
   };
 
@@ -110,7 +114,6 @@ export default function JobForm({ user, onNewJob }) {
     <div className="max-w-xl mx-auto p-6 bg-white shadow-md rounded-md border">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Post a New Job</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Job details inputs remain the same */}
         <div>
           <label htmlFor="job-title" className="block text-sm font-medium text-gray-700">Job Title</label>
           <input id="job-title" className="mt-1 w-full p-2 border rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Weekly Apartment Clean" required />
@@ -133,11 +136,25 @@ export default function JobForm({ user, onNewJob }) {
             <input id="job-budget" className="mt-1 w-full p-2 border rounded" type="number" step="0.01" min="0" max="999" value={budget} onChange={e => setBudget(e.target.value)} />
           </div>
         </div>
+        
+        {/* --- ADD THE NEW INPUT FIELD --- */}
+        <div>
+          <label htmlFor="interest-limit" className="block text-sm font-medium text-gray-700">
+            Max expressions of interest (1–20)
+          </label>
+          <input
+            id="interest-limit"
+            type="number"
+            min={1}
+            max={20}
+            value={interestLimit}
+            onChange={(e) => setInterestLimit(Math.max(1, Math.min(20, Number(e.target.value || 1))))}
+            className="mt-1 w-full p-2 border rounded"
+          />
+        </div>
 
         <div className="border-t pt-4">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
-          
-          {/* Section for adding tasks (no scrollbar here) */}
           <div className="p-4 bg-gray-50 rounded-md space-y-3">
             <div className="flex items-end gap-2">
               <div className="w-1/3">
@@ -151,9 +168,6 @@ export default function JobForm({ user, onNewJob }) {
               <button type="button" onClick={handleAddTask} className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 font-semibold">Add</button>
             </div>
           </div>
-          
-          {/* --- FIX IS HERE --- */}
-          {/* This div wraps the task list and makes it scrollable */}
           <div className="mt-4 max-h-60 overflow-y-auto border rounded-md">
             <ul className="divide-y divide-gray-200">
               {tasks.length > 0 ? (

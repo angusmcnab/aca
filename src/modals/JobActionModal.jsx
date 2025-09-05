@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"; // --- ADD 'React' TO THE IMPORT ---
+import React, { useState, useEffect } from "react";
 import { supabase } from "../supabase";
 import { toast } from "react-hot-toast";
 import { Link } from 'react-router-dom';
@@ -47,10 +47,10 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     setCurrentCategory('');
   };
 
-    const handleDeleteTask = (id) => {
+  const handleDeleteTask = (id) => {
     setTasks(tasks.filter(task => task.id !== id));
   };
-  
+
   const handleEditTask = (task) => {
     setEditingTaskId(task.id);
     setEditingTaskText({ category: task.category, description: task.task_description });
@@ -59,7 +59,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   const handleCancelEditTask = () => {
     setEditingTaskId(null);
   };
-  
+
   const handleSaveTask = (taskId) => {
     setTasks(tasks.map(task => 
       task.id === taskId 
@@ -217,20 +217,18 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   );
 }
 
-
 export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, onDelete, currentUserId, userRole }) {
   const [tasks, setTasks] = useState(job.job_tasks || []);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
-  const [interestedProviders, setInterestedProviders] = useState([]);
+  const [interestedProviders, setInterestedProviders] = useState(null);
   const [isAssigning, setIsAssigning] = useState(false);
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
   const isUnassigned = !job.provider_id;
-  const hasInterest = Array.isArray(interestedProviders) && interestedProviders.length > 0;
-
-  const canEdit = isJobOwner && isUnassigned && !hasInterest;
+  
+  const canEdit = isJobOwner && isUnassigned && interestedProviders !== null && interestedProviders.length === 0;
 
   useEffect(() => {
     const checkInterest = async () => {
@@ -254,9 +252,12 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
 
         if (error) {
           toast.error("Could not fetch interested providers.");
+          setInterestedProviders([]);
         } else {
           setInterestedProviders(data || []);
         }
+      } else {
+        setInterestedProviders([]);
       }
     };
 
@@ -418,44 +419,46 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               </div>
             </div>
 
-            {isJobOwner && isUnassigned && (
+            {isJobOwner && isUnassigned && Array.isArray(interestedProviders) && (
               <div className="border-t pt-4 mt-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
                     {job.interest_limit && <p className="text-sm text-gray-500">{interestedProviders.length} of {job.interest_limit} spots taken</p>}
                   </div>
-                <ul className="mt-2 space-y-2">
-                  {interestedProviders.map(provider => {
-                    const displayName = provider.company_name || provider.full_name || provider.email;
-                    return (
-                      <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 flex-shrink-0">
-                            {provider.avatar_url ? (
-                              <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-gray-300" />
-                            )}
-                          </div>
-                          <Link
-                            to={`/profile/${provider.provider_id}`}
-                            className="text-blue-600 hover:underline font-medium"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {displayName}
-                          </Link>
-                        </div>
-                        <button 
-                          onClick={() => handleAssignJob(provider.provider_id)}
-                          disabled={isAssigning}
-                          className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 flex-shrink-0"
-                        >
-                          {isAssigning ? '...' : 'Assign Job'}
-                        </button>
-                      </li>
+                {interestedProviders.length > 0 && (
+                    <ul className="mt-2 space-y-2">
+                    {interestedProviders.map(provider => {
+                        const displayName = provider.company_name || provider.full_name || provider.email;
+                        return (
+                        <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                            <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 flex-shrink-0">
+                                {provider.avatar_url ? (
+                                <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
+                                ) : (
+                                <div className="w-10 h-10 rounded-full bg-gray-300" />
+                                )}
+                            </div>
+                            <Link
+                                to={`/profile/${provider.provider_id}`}
+                                className="text-blue-600 hover:underline font-medium"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {displayName}
+                            </Link>
+                            </div>
+                            <button 
+                            onClick={() => handleAssignJob(provider.provider_id)}
+                            disabled={isAssigning}
+                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 flex-shrink-0"
+                            >
+                            {isAssigning ? '...' : 'Assign Job'}
+                            </button>
+                        </li>
+                        )}
                     )}
-                  )}
-                </ul>
+                    </ul>
+                )}
               </div>
             )}
             
