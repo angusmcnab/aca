@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react"; // --- ADD 'React' TO THE IMPORT ---
 import { supabase } from "../supabase";
 import { toast } from "react-hot-toast";
+import { Link } from 'react-router-dom';
 import TaskChecklist from "../components/TaskChecklist";
 import LocationAutocomplete from "../components/LocationAutocomplete";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
 import TaskSummaryBadge from "../components/TaskSummaryBadge";
-import Avatar from "../components/Avatar";
 
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
@@ -230,7 +230,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const isUnassigned = !job.provider_id;
   const hasInterest = Array.isArray(interestedProviders) && interestedProviders.length > 0;
 
-  // This is the new, stricter rule for editing
   const canEdit = isJobOwner && isUnassigned && !hasInterest;
 
   useEffect(() => {
@@ -263,7 +262,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
 
     checkInterest();
     fetchInterestedProviders();
-    setIsEditMode(false); // Reset edit mode when job changes
+    setIsEditMode(false);
     setTasks(job.job_tasks || []);
   }, [job, currentUserId, userRole, isJobOwner, isUnassigned]);
 
@@ -347,7 +346,10 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const detailItem = (label, value) => (
     <div>
       <p className="text-sm font-medium text-gray-500">{label}</p>
-      <p className="mt-1 text-gray-900">{value || <span className="text-gray-400">Not specified</span>}</p>
+      {React.isValidElement(value) ? 
+        <div className="mt-1">{value}</div> : 
+        <p className="mt-1 text-gray-900">{value || <span className="text-gray-400">Not specified</span>}</p>
+      }
     </div>
   );
 
@@ -390,7 +392,12 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Location", job.location)}
 
               {!isUnassigned && job.provider && userRole === 'customer' && (
-                detailItem("Assigned To", getDisplayName(job.provider))
+                detailItem(
+                  "Assigned To",
+                  <Link to={`/profile/${job.provider.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e)=>e.stopPropagation()}>
+                    {getDisplayName(job.provider)}
+                  </Link>
+                )
               )}
               {!isUnassigned && job.client && userRole === 'service_provider' && (
                 detailItem("Client", getDisplayName(job.client))
@@ -411,28 +418,37 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               </div>
             </div>
 
-            {isJobOwner && isUnassigned && interestedProviders.length > 0 && (
+            {isJobOwner && isUnassigned && (
               <div className="border-t pt-4 mt-4">
-                <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
+                    {job.interest_limit && <p className="text-sm text-gray-500">{interestedProviders.length} of {job.interest_limit} spots taken</p>}
+                  </div>
                 <ul className="mt-2 space-y-2">
                   {interestedProviders.map(provider => {
                     const displayName = provider.company_name || provider.full_name || provider.email;
                     return (
                       <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10">
+                          <div className="w-10 h-10 flex-shrink-0">
                             {provider.avatar_url ? (
                               <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-gray-300" />
                             )}
                           </div>
-                          <p className="font-semibold text-gray-700">{displayName}</p>
+                          <Link
+                            to={`/profile/${provider.provider_id}`}
+                            className="text-blue-600 hover:underline font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {displayName}
+                          </Link>
                         </div>
                         <button 
                           onClick={() => handleAssignJob(provider.provider_id)}
                           disabled={isAssigning}
-                          className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400"
+                          className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 flex-shrink-0"
                         >
                           {isAssigning ? '...' : 'Assign Job'}
                         </button>
