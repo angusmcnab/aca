@@ -6,7 +6,7 @@ import LocationAutocomplete from "../components/LocationAutocomplete";
 import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
 import TaskSummaryBadge from "../components/TaskSummaryBadge";
-import Avatar from "../components/Avatar"; // We'll need this for the provider's avatar
+import Avatar from "../components/Avatar";
 
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
@@ -37,13 +37,9 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
       toast.error("Please enter a task description.");
       return;
     }
-    if (!currentCategory.trim()) {
-      toast.error("Please enter a category or room.");
-      return;
-    }
     const newTask = {
       id: -Date.now(),
-      category: currentCategory.trim(),
+      category: currentCategory.trim() || 'General',
       task_description: currentTask.trim(),
     };
     setTasks([...tasks, newTask]);
@@ -51,17 +47,10 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     setCurrentCategory('');
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddTask();
-    }
-  };
-
-  const handleDeleteTask = (id) => {
+    const handleDeleteTask = (id) => {
     setTasks(tasks.filter(task => task.id !== id));
   };
-
+  
   const handleEditTask = (task) => {
     setEditingTaskId(task.id);
     setEditingTaskText({ category: task.category, description: task.task_description });
@@ -70,7 +59,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   const handleCancelEditTask = () => {
     setEditingTaskId(null);
   };
-
+  
   const handleSaveTask = (taskId) => {
     setTasks(tasks.map(task => 
       task.id === taskId 
@@ -79,7 +68,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     ));
     setEditingTaskId(null);
   };
-  
+
   const handleSubmit = async () => {
     setMessage("");
     const validation = validateJobForm(formData);
@@ -94,7 +83,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
 
     setSaving(true);
     
-    const { data: updatedJobData, error: jobUpdateError } = await supabase
+    const { error: jobUpdateError } = await supabase
       .from("jobs")
       .update({
         title: formData.title,
@@ -103,12 +92,15 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
         time: formData.time,
         budget: formData.budget ? parseFloat(formData.budget) : null,
       })
-      .eq("id", job.id)
-      .select('*, job_tasks(*)')
-      .single();
-
+      .eq("id", job.id);
+      
     if (jobUpdateError) {
-      setMessage(`❌ Error updating job: ${jobUpdateError.message}`);
+      const err = jobUpdateError;
+      if (err.message?.includes('budget_locked_due_to_interest')) {
+        toast.error('Budget is locked once providers have shown interest.');
+      } else {
+         setMessage(`❌ Error updating job: ${err.message}`);
+      }
       setSaving(false);
       return;
     }
@@ -136,13 +128,17 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
     }
 
     if (taskError) {
-      toast.error(`Job details saved, but failed to update tasks: ${taskError.message}`);
+        if (taskError.message?.includes('tasks_locked_due_to_interest')) {
+            toast.error('Tasks are locked once providers have shown interest.');
+        } else {
+            toast.error(`Job details saved, but failed to update tasks: ${taskError.message}`);
+        }
     } else {
       toast.success("Job updated successfully!");
     }
     
-    const { data: finalJobData } = await supabase.from('jobs').select('*, job_tasks(*), client:profiles(email), provider:profiles(email)').eq('id', job.id).single();
-    onSave(finalJobData || updatedJobData);
+    const { data: finalJobData } = await supabase.from('jobs').select('*, job_tasks(*), client:profiles!client_id(*), provider:profiles!provider_id(*)').eq('id', job.id).single();
+    onSave(finalJobData);
     setSaving(false);
   };
 
@@ -177,34 +173,34 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
         <h3 className="text-lg font-semibold text-gray-800 mb-2">Checklist of Tasks</h3>
         <div className="p-4 bg-gray-50 rounded-md space-y-3">
           <div className="flex items-end gap-2">
-            <div className="w-1/3"><label className="block text-xs font-medium text-gray-600">Category</label><input className="mt-1 w-full p-2 border rounded" value={currentCategory} onChange={e => setCurrentCategory(e.target.value)} onKeyDown={handleKeyDown} placeholder="e.g., Kitchen" /></div>
-            <div className="w-2/3"><label className="block text-xs font-medium text-gray-600">Task</label><input className="mt-1 w-full p-2 border rounded" value={currentTask} onChange={e => setCurrentTask(e.target.value)} onKeyDown={handleKeyDown} placeholder="e.g., Mop the floor" /></div>
+            <div className="w-1/3"><label className="block text-xs font-medium text-gray-600">Category</label><input className="mt-1 w-full p-2 border rounded" value={currentCategory} onChange={e => setCurrentCategory(e.target.value)} placeholder="e.g., Kitchen" /></div>
+            <div className="w-2/3"><label className="block text-xs font-medium text-gray-600">Task</label><input className="mt-1 w-full p-2 border rounded" value={currentTask} onChange={e => setCurrentTask(e.target.value)} placeholder="e.g., Mop the floor" /></div>
             <button type="button" onClick={handleAddTask} className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 font-semibold">Add</button>
           </div>
         </div>
         <ul className="mt-4 space-y-2 max-h-40 overflow-y-auto">
           {tasks.map(task => (
             <li key={task.id} className="p-2 bg-white border rounded-md">
-              {editingTaskId === task.id ? (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input className="w-1/3 p-2 border rounded" value={editingTaskText.category} onChange={e => setEditingTaskText({...editingTaskText, category: e.target.value})} placeholder="Category"/>
-                    <input className="w-2/3 p-2 border rounded" value={editingTaskText.description} onChange={e => setEditingTaskText({...editingTaskText, description: e.target.value})} placeholder="Description"/>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={handleCancelEditTask} className="text-xs font-semibold text-gray-600">Cancel</button>
-                    <button onClick={() => handleSaveTask(task.id)} className="text-xs font-semibold text-blue-600">Save</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <p className="text-gray-700"><span className="font-semibold">{task.category}:</span> {task.task_description}</p>
-                  <div className="flex gap-4">
-                    <button type="button" onClick={() => handleEditTask(task)} className="text-blue-600 hover:text-blue-800 text-sm font-semibold">Edit</button>
-                    <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-red-500 hover:text-red-700 text-sm font-semibold">Remove</button>
-                  </div>
-                </div>
-              )}
+                {editingTaskId === task.id ? (
+                    <div className="space-y-2">
+                        <div className="flex gap-2">
+                        <input className="w-1/3 p-2 border rounded" value={editingTaskText.category} onChange={e => setEditingTaskText({...editingTaskText, category: e.target.value})} placeholder="Category"/>
+                        <input className="w-2/3 p-2 border rounded" value={editingTaskText.description} onChange={e => setEditingTaskText({...editingTaskText, description: e.target.value})} placeholder="Description"/>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                        <button onClick={handleCancelEditTask} className="text-xs font-semibold text-gray-600">Cancel</button>
+                        <button onClick={() => handleSaveTask(task.id)} className="text-xs font-semibold text-blue-600">Save</button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex justify-between items-center">
+                        <p className="text-gray-700"><span className="font-semibold">{task.category}:</span> {task.task_description}</p>
+                        <div className="flex gap-4">
+                        <button type="button" onClick={() => handleEditTask(task)} className="text-blue-600 hover:text-blue-800 text-sm font-semibold">Edit</button>
+                        <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-red-500 hover:text-red-700 text-sm font-semibold">Remove</button>
+                        </div>
+                    </div>
+                )}
             </li>
           ))}
           {tasks.length === 0 && <p className="text-sm text-gray-500 text-center">No tasks added yet.</p>}
@@ -221,7 +217,8 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   );
 }
 
-export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, currentUserId, userRole }) {
+
+export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, onDelete, currentUserId, userRole }) {
   const [tasks, setTasks] = useState(job.job_tasks || []);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -230,8 +227,11 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   const [isAssigning, setIsAssigning] = useState(false);
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
-  const isJobAccepted = !!job.provider_id;
-  const canEdit = isJobOwner && !isJobAccepted;
+  const isUnassigned = !job.provider_id;
+  const hasInterest = Array.isArray(interestedProviders) && interestedProviders.length > 0;
+
+  // This is the new, stricter rule for editing
+  const canEdit = isJobOwner && isUnassigned && !hasInterest;
 
   useEffect(() => {
     const checkInterest = async () => {
@@ -248,25 +248,24 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     };
     
     const fetchInterestedProviders = async () => {
-      if (isJobOwner && !isJobAccepted) {
+      if (isJobOwner && isUnassigned) {
         const { data, error } = await supabase.rpc('get_interested_providers', {
           p_job_id: job.id,
         });
 
         if (error) {
           toast.error("Could not fetch interested providers.");
-          console.error("Error fetching interested providers:", error.message);
         } else {
-          setInterestedProviders(data);
+          setInterestedProviders(data || []);
         }
       }
     };
 
     checkInterest();
     fetchInterestedProviders();
-    setIsEditMode(false);
+    setIsEditMode(false); // Reset edit mode when job changes
     setTasks(job.job_tasks || []);
-  }, [job, currentUserId, userRole, isJobOwner, isJobAccepted]);
+  }, [job, currentUserId, userRole, isJobOwner, isUnassigned]);
 
   const handleAssignJob = async (providerId) => {
     setIsAssigning(true);
@@ -283,7 +282,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     }
     setIsAssigning(false);
   };
-
+  
   const handleToggleTask = async (taskToToggle) => {
     setLoadingTaskId(taskToToggle.id);
     const isNowDone = !taskToToggle.is_done;
@@ -298,13 +297,13 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     const allTasksDone = newTasks.every(t => t.is_done);
     let updatedJobForState = { ...job, job_tasks: newTasks };
     if (allTasksDone && job.status !== 'completed') {
-      const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select('*, client:profiles(email), provider:profiles(email)').single();
+      const { data, error } = await supabase.from('jobs').update({ status: 'completed', job_completed_at: new Date().toISOString() }).eq('id', job.id).select('*, client:profiles!client_id(*), provider:profiles!provider_id(*)').single();
       if (data && !error) {
         toast.success('Job complete!');
         updatedJobForState = { ...updatedJobForState, ...data };
       }
     } else if (!allTasksDone && job.status === 'completed') {
-      const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select('*, client:profiles(email), provider:profiles(email)').single();
+      const { data, error } = await supabase.from('jobs').update({ status: 'in_progress', job_completed_at: null }).eq('id', job.id).select('*, client:profiles!client_id(*), provider:profiles!provider_id(*)').single();
       if (data && !error) {
         toast.success("Job status reverted.");
         updatedJobForState = { ...updatedJobForState, ...data };
@@ -315,22 +314,29 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   };
   
   const handleExpressInterest = async (jobId) => {
-    const { error } = await supabase
-      .from('job_interests')
-      .insert({ job_id: jobId, provider_id: currentUserId });
-  
-    if (error) {
-      if (error.message.includes('duplicate')) {
-        toast.error("You've already shown interest in this job.");
-      } else {
-        toast.error("Failed to express interest.");
-      }
-    } else {
-      toast.success("Interest recorded! The customer will review applicants.");
-      setHasExpressedInterest(true);
-    }
-  };
+    const { error } = await supabase.rpc('express_interest_in_job', { p_job_id: jobId });
 
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('interest_limit_reached')) {
+        toast.error("This job has already reached the maximum interest level.");
+      } else if (msg.includes('already_interested')) {
+        toast.error("You've already shown interest in this job.");
+      } else if (msg.includes('job_already_assigned')) {
+        toast.error("This job has already been assigned.");
+      } else if (msg.includes('cannot_interest_own_job')) {
+        toast.error("You can't express interest in your own job.");
+      } else {
+        console.error(error);
+        toast.error("Failed to express interest. Please try again.");
+      }
+      return;
+    }
+
+    toast.success("Interest recorded! The customer will be notified.");
+    setHasExpressedInterest(true);
+  };
+  
   const handleShareJob = () => {
     const jobUrl = `${window.location.origin}/job/${job.id}`;
     navigator.clipboard.writeText(jobUrl)
@@ -351,7 +357,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getDisplayName = (profile) => {
+    const getDisplayName = (profile) => {
     if (!profile) return '...';
     return profile.company_name || profile.full_name || profile.email;
   };
@@ -383,10 +389,10 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Title", job.title)}
               {detailItem("Location", job.location)}
 
-              {isJobAccepted && job.provider && userRole === 'customer' && (
+              {!isUnassigned && job.provider && userRole === 'customer' && (
                 detailItem("Assigned To", getDisplayName(job.provider))
               )}
-              {isJobAccepted && job.client && userRole === 'service_provider' && (
+              {!isUnassigned && job.client && userRole === 'service_provider' && (
                 detailItem("Client", getDisplayName(job.client))
               )}
 
@@ -405,7 +411,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               </div>
             </div>
 
-            {isJobOwner && !isJobAccepted && interestedProviders.length > 0 && (
+            {isJobOwner && isUnassigned && interestedProviders.length > 0 && (
               <div className="border-t pt-4 mt-4">
                 <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
                 <ul className="mt-2 space-y-2">
@@ -415,7 +421,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                       <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10">
-                            {/* We use a simplified Avatar component here for display only */}
                             {provider.avatar_url ? (
                               <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
                             ) : (
@@ -437,7 +442,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                 </ul>
               </div>
             )}
-
+            
             <div className="text-xs text-gray-400 space-y-1 border-t pt-4 mt-4">
               <p>Created: {formatTimestamp(job.created_at)}</p>
               {job.accepted_at && <p>Accepted: {formatTimestamp(job.accepted_at)}</p>}
@@ -452,7 +457,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                 <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
                 {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
                 
-                {userRole === 'service_provider' && !job.provider_id && (
+                {userRole === 'service_provider' && isUnassigned && (
                   <button
                     onClick={() => handleExpressInterest(job.id)}
                     disabled={hasExpressedInterest}
