@@ -8,6 +8,81 @@ import { validateJobForm, getToday, getMaxDate } from "../utils/validation";
 import JobStatusBadge from "../components/JobStatusBadge";
 import TaskSummaryBadge from "../components/TaskSummaryBadge";
 
+// This is a new sub-component to render the history list
+function AuditLogViewer({ logs, isLoading }) {
+  if (isLoading) {
+    return (
+      <div className="border-t pt-4 mt-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-800">Job History</h3>
+          <span className="text-xs text-gray-500">Loading…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!logs || logs.length === 0) {
+    return (
+      <div className="border-t pt-4 mt-4">
+        <h3 className="text-lg font-semibold text-gray-800 mb-2">Job History</h3>
+        <div className="text-sm text-gray-500">No history found for this job.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t pt-4 mt-4">
+      <h3 className="text-lg font-semibold text-gray-800 mb-2">Job History</h3>
+      <div className="max-h-60 overflow-y-auto bg-gray-50 p-3 rounded-md border">
+        <ul className="space-y-3">
+          {logs.map((row, i) => {
+            const actor = row.actor_company || row.actor_full || row.actor_email || 'System';
+            const actionText = (row.action || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const details = row.details || {};
+            // Build a diff list if details.old/new present or details.changes
+            let diffs = [];
+            if (details.changes && typeof details.changes === 'object') {
+              Object.entries(details.changes).forEach(([key, val]) => {
+                if (val && typeof val === 'object' && 'old' in val && 'new' in val && val.old !== val.new) {
+                  diffs.push({ field: key, old: val.old, new: val.new });
+                }
+              });
+            } else if (details.old && details.new) {
+              Object.keys(details.new).forEach((k) => {
+                const oldV = details.old[k];
+                const newV = details.new[k];
+                if (oldV !== newV) diffs.push({ field: k, old: oldV, new: newV });
+              });
+            }
+            return (
+              <li key={`${row.entity}-${row.entity_id}-${row.occurred_at}-${i}`} className="text-sm">
+                <div className="flex items-start justify-between">
+                  <div className="pr-3">
+                    <p className="font-semibold text-gray-800">{actionText}</p>
+                    <p className="text-xs text-gray-500">by {actor}</p>
+                    {diffs.length > 0 && (
+                      <ul className="mt-1 text-xs text-gray-700 space-y-0.5">
+                        {diffs.map((d, idx) => (
+                          <li key={idx}>
+                            <span className="font-medium">{d.field}</span>: <span className="line-through text-gray-500">{String(d.old)}</span> → <span>{String(d.new)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                    {new Date(row.occurred_at).toLocaleString()}
+                  </span>
+                </div>
+              </li>
+            );
+        })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function EditView({ job, initialTasks, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     title: job.title || "",
@@ -19,10 +94,10 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   const [tasks, setTasks] = useState(initialTasks);
   const [currentCategory, setCurrentCategory] = useState('');
   const [currentTask, setCurrentTask] = useState('');
-  const [editingTaskId, setEditingTaskId] = useState(null);
-  const [editingTaskText, setEditingTaskText] = useState({ category: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editingTaskText, setEditingTaskText] = useState({ category: '', description: '' });
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -50,7 +125,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   const handleDeleteTask = (id) => {
     setTasks(tasks.filter(task => task.id !== id));
   };
-
+  
   const handleEditTask = (task) => {
     setEditingTaskId(task.id);
     setEditingTaskText({ category: task.category, description: task.task_description });
@@ -59,7 +134,7 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   const handleCancelEditTask = () => {
     setEditingTaskId(null);
   };
-
+  
   const handleSaveTask = (taskId) => {
     setTasks(tasks.map(task => 
       task.id === taskId 
@@ -217,18 +292,28 @@ function EditView({ job, initialTasks, onSave, onCancel }) {
   );
 }
 
+
 export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpdate, onDelete, currentUserId, userRole }) {
   const [tasks, setTasks] = useState(job.job_tasks || []);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
-  const [interestedProviders, setInterestedProviders] = useState(null);
+  const [interestedProviders, setInterestedProviders] = useState([]);
   const [isAssigning, setIsAssigning] = useState(false);
+  
+  // --- ADDED STATE ---
+  const [showHistory, setShowHistory] = useState(false);
+  const [auditRows, setAuditRows] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   const isJobOwner = userRole === 'customer' && job.client_id === currentUserId;
   const isUnassigned = !job.provider_id;
-  
-  const canEdit = isJobOwner && isUnassigned && interestedProviders !== null && interestedProviders.length === 0;
+  const hasInterest = Array.isArray(interestedProviders) && interestedProviders.length > 0;
+  const canEdit = isJobOwner && isUnassigned && !hasInterest;
+
+  // --- ADDED DERIVED FLAGS ---
+  const isAssignedProvider = userRole === 'service_provider' && job.provider_id === currentUserId;
+  const canViewHistory = isJobOwner || isAssignedProvider;
 
   useEffect(() => {
     const checkInterest = async () => {
@@ -239,25 +324,18 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
           .eq('job_id', job.id)
           .eq('provider_id', currentUserId)
           .maybeSingle();
-        
         setHasExpressedInterest(!!data);
       }
     };
     
     const fetchInterestedProviders = async () => {
       if (isJobOwner && isUnassigned) {
-        const { data, error } = await supabase.rpc('get_interested_providers', {
-          p_job_id: job.id,
-        });
-
+        const { data, error } = await supabase.rpc('get_interested_providers', { p_job_id: job.id });
         if (error) {
           toast.error("Could not fetch interested providers.");
-          setInterestedProviders([]);
         } else {
           setInterestedProviders(data || []);
         }
-      } else {
-        setInterestedProviders([]);
       }
     };
 
@@ -267,13 +345,33 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     setTasks(job.job_tasks || []);
   }, [job, currentUserId, userRole, isJobOwner, isUnassigned]);
 
+  // --- ADDED USEEFFECT FOR AUDIT LOG ---
+  useEffect(() => {
+    if (!showHistory || !job?.id) return;
+    (async () => {
+      setLoadingLogs(true);
+      const { data, error } = await supabase.rpc('get_job_audit_log', { p_job_id: job.id });
+      if (error) {
+        if (error.code === 'P0001' || /not_authorized/i.test(error.message || '')) {
+          toast.error('History is only available to the job owner and assigned provider.');
+        } else {
+          toast.error('Failed to load job history.');
+          console.error('audit fetch error', error);
+        }
+        setAuditRows([]);
+      } else {
+        setAuditRows(data || []);
+      }
+      setLoadingLogs(false);
+    })();
+  }, [showHistory, job?.id]);
+
   const handleAssignJob = async (providerId) => {
     setIsAssigning(true);
     const { data: updatedJob, error } = await supabase.rpc('assign_job_to_provider', {
       p_job_id: job.id,
       p_provider_id: providerId
     });
-
     if (error) {
       toast.error(`Failed to assign job: ${error.message}`);
     } else {
@@ -315,7 +413,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
   
   const handleExpressInterest = async (jobId) => {
     const { error } = await supabase.rpc('express_interest_in_job', { p_job_id: jobId });
-
     if (error) {
       const msg = (error.message || '').toLowerCase();
       if (msg.includes('interest_limit_reached')) {
@@ -332,7 +429,6 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
       }
       return;
     }
-
     toast.success("Interest recorded! The customer will be notified.");
     setHasExpressedInterest(true);
   };
@@ -360,7 +456,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-    const getDisplayName = (profile) => {
+  const getDisplayName = (profile) => {
     if (!profile) return '...';
     return profile.company_name || profile.full_name || profile.email;
   };
@@ -393,12 +489,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Location", job.location)}
 
               {!isUnassigned && job.provider && userRole === 'customer' && (
-                detailItem(
-                  "Assigned To",
-                  <Link to={`/profile/${job.provider.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e)=>e.stopPropagation()}>
-                    {getDisplayName(job.provider)}
-                  </Link>
-                )
+                detailItem( "Assigned To", <Link to={`/profile/${job.provider.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e)=>e.stopPropagation()}>{getDisplayName(job.provider)}</Link> )
               )}
               {!isUnassigned && job.client && userRole === 'service_provider' && (
                 detailItem("Client", getDisplayName(job.client))
@@ -419,49 +510,50 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               </div>
             </div>
 
-            {isJobOwner && isUnassigned && Array.isArray(interestedProviders) && (
+            {isJobOwner && isUnassigned && (
               <div className="border-t pt-4 mt-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-gray-800">Interested Providers</h3>
                     {job.interest_limit && <p className="text-sm text-gray-500">{interestedProviders.length} of {job.interest_limit} spots taken</p>}
                   </div>
-                {interestedProviders.length > 0 && (
-                    <ul className="mt-2 space-y-2">
-                    {interestedProviders.map(provider => {
-                        const displayName = provider.company_name || provider.full_name || provider.email;
-                        return (
-                        <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
-                            <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 flex-shrink-0">
-                                {provider.avatar_url ? (
-                                <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
-                                ) : (
-                                <div className="w-10 h-10 rounded-full bg-gray-300" />
-                                )}
-                            </div>
-                            <Link
-                                to={`/profile/${provider.provider_id}`}
-                                className="text-blue-600 hover:underline font-medium"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                {displayName}
-                            </Link>
-                            </div>
-                            <button 
-                            onClick={() => handleAssignJob(provider.provider_id)}
-                            disabled={isAssigning}
-                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 flex-shrink-0"
-                            >
-                            {isAssigning ? '...' : 'Assign Job'}
-                            </button>
-                        </li>
-                        )}
+                <ul className="mt-2 space-y-2">
+                  {interestedProviders.map(provider => {
+                    const displayName = provider.company_name || provider.full_name || provider.email;
+                    return (
+                      <li key={provider.provider_id} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 flex-shrink-0">
+                            {provider.avatar_url ? (
+                              <img src={supabase.storage.from('avatars').getPublicUrl(provider.avatar_url).data.publicUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gray-300" />
+                            )}
+                          </div>
+                          <Link
+                            to={`/profile/${provider.provider_id}`}
+                            className="text-blue-600 hover:underline font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {displayName}
+                          </Link>
+                        </div>
+                        <button 
+                          onClick={() => handleAssignJob(provider.provider_id)}
+                          disabled={isAssigning}
+                          className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 flex-shrink-0"
+                        >
+                          {isAssigning ? '...' : 'Assign Job'}
+                        </button>
+                      </li>
                     )}
-                    </ul>
-                )}
+                  )}
+                </ul>
               </div>
             )}
             
+            {/* --- ADDED: Audit History Panel --- */}
+            {showHistory && <AuditLogViewer logs={auditRows} isLoading={loadingLogs} />}
+
             <div className="text-xs text-gray-400 space-y-1 border-t pt-4 mt-4">
               <p>Created: {formatTimestamp(job.created_at)}</p>
               {job.accepted_at && <p>Accepted: {formatTimestamp(job.accepted_at)}</p>}
@@ -469,9 +561,23 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
             </div>
 
             <div className="flex justify-between items-center border-t pt-4 mt-4">
-              <button onClick={handleShareJob} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm font-semibold">
-                Copy Link
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleShareJob}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm font-semibold"
+                >
+                  Copy Link
+                </button>
+                {/* History only relevant once assigned and viewer is allowed */}
+                {canViewHistory && (
+                  <button
+                    onClick={() => setShowHistory((s)=>!s)}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm font-semibold"
+                  >
+                    {showHistory ? 'Hide History' : 'Show History'}
+                  </button>
+                )}
+              </div>
               <div className="flex gap-4">
                 <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">Close</button>
                 {canEdit && (<button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit Job</button>)}
@@ -480,11 +586,7 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
                   <button
                     onClick={() => handleExpressInterest(job.id)}
                     disabled={hasExpressedInterest}
-                    className={`px-4 py-2 font-semibold text-white rounded transition-colors ${
-                      hasExpressedInterest
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
+                    className={`px-4 py-2 font-semibold text-white rounded transition-colors ${hasExpressedInterest ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                   >
                     {hasExpressedInterest ? "Interest Expressed" : "I'm Interested"}
                   </button>
