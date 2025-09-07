@@ -15,7 +15,23 @@ export default function JobForm({ user, onNewJob }) {
   const [currentTask, setCurrentTask] = useState('');
   const [tasks, setTasks] = useState([]);
   const [message, setMessage] = useState('');
-  const [interestLimit, setInterestLimit] = useState(5); // --- ADD THIS STATE ---
+  const [interestLimit, setInterestLimit] = useState(5);
+
+  // Generate time options in 15-minute intervals
+  const generateTimeOptions = () => {
+    const options = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 15) {
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        options.push(
+          <option key={timeString} value={timeString}>
+            {timeString}
+          </option>
+        );
+      }
+    }
+    return options;
+  };
 
   const handleAddTask = () => {
     if (!currentTask.trim()) {
@@ -61,7 +77,6 @@ export default function JobForm({ user, onNewJob }) {
     }
 
     setLoading(true);
-    // --- UPDATE THE INSERT STATEMENT ---
     const { data: newJob, error: jobError } = await supabase
       .from('jobs')
       .insert({
@@ -71,7 +86,7 @@ export default function JobForm({ user, onNewJob }) {
         date,
         time,
         budget: budget ? parseFloat(budget) : null,
-        interest_limit: interestLimit, // --- ADD THIS LINE ---
+        interest_limit: interestLimit,
       })
       .select()
       .single();
@@ -106,7 +121,7 @@ export default function JobForm({ user, onNewJob }) {
     setCurrentCategory('');
     setCurrentTask('');
     setMessage('');
-    setInterestLimit(5); // --- RESET THE STATE ---
+    setInterestLimit(5);
     setLoading(false);
   };
 
@@ -129,7 +144,16 @@ export default function JobForm({ user, onNewJob }) {
           </div>
           <div>
             <label htmlFor="job-time" className="block text-sm font-medium text-gray-700">Time</label>
-            <input id="job-time" className="mt-1 w-full p-2 border rounded" type="time" value={time} onChange={e => setTime(e.target.value)} required />
+            <select 
+              id="job-time" 
+              className="mt-1 w-full p-2 border rounded" 
+              value={time} 
+              onChange={e => setTime(e.target.value)} 
+              required
+            >
+              <option value="">Select a time</option>
+              {generateTimeOptions()}
+            </select>
           </div>
           <div>
             <label htmlFor="job-budget" className="block text-sm font-medium text-gray-700">Budget (£)</label>
@@ -137,7 +161,6 @@ export default function JobForm({ user, onNewJob }) {
           </div>
         </div>
         
-        {/* --- ADD THE NEW INPUT FIELD --- */}
         <div>
           <label htmlFor="interest-limit" className="block text-sm font-medium text-gray-700">
             Max expressions of interest (1–20)
