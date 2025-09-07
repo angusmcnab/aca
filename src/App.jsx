@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react'; // Add useCallback
 import { supabase } from './supabase';
 import Auth from './Auth';
 import Account from './Account';
@@ -8,6 +8,7 @@ import JobActionModal from './modals/JobActionModal';
 import UpdatePasswordModal from './modals/UpdatePasswordModal';
 import { Toaster, toast } from 'react-hot-toast';
 
+// Header, FilterControls, ClientDashboard, CleanerDashboard components remain the same...
 function Header({ session, onLogout, onShowAccount, onShowDashboard }) {
   return (
     <header className="bg-white shadow">
@@ -118,6 +119,7 @@ function CleanerDashboard({ jobs, loading, onSelectJob, currentUserId, userRole,
   );
 }
 
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -144,7 +146,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchInitialData = async () => {
+  const fetchInitialData = useCallback(async () => {
     if (!session) {
       setLoading(false);
       return;
@@ -152,34 +154,70 @@ export default function App() {
     
     setLoading(true);
     const { data: profileData, error: profileError } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-    if (profileError) toast.error('Error fetching user profile.');
-    else setProfile(profileData);
+    if (profileError) {
+      toast.error('Error fetching user profile.');
+      setLoading(false);
+      return;
+    }
+    
+    setProfile(profileData);
 
-    // This query now fetches all the profile details for both client and provider
-    const { data: jobsData, error: jobsError } = await supabase
-      .from('jobs')
-      .select('*, job_tasks(*), client:profiles!client_id(email, full_name, company_name, avatar_url), provider:profiles!provider_id(email, full_name, company_name, avatar_url)')
-      .order('created_at', { ascending: false });
+    let jobsData, jobsError;
+
+    if (profileData.role === 'service_provider') {
+      const { data, error } = await supabase.rpc('get_jobs_for_provider', {
+        p_provider_id: session.user.id,
+      });
+      jobsData = data;
+      jobsError = error;
+    } else {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*, job_tasks(*), client:profiles!client_id(*), provider:profiles!provider_id(*), job_interests(count)')
+        .order('created_at', { ascending: false });
+      
+      if (data) {
+        jobsData = data.map(job => ({
+          ...job,
+          interest_count: job.job_interests[0]?.count || 0,
+          job_tasks: job.job_tasks || [],
+        }));
+      }
+      jobsError = error;
+    }
 
     if (jobsError) {
       toast.error('Could not fetch jobs.');
-      console.error(jobsError); 
+      console.error(jobsError);
     } else {
       setJobs(jobsData || []);
     }
     
     setLoading(false);
-  };
+  }, [session]); // Add session as a dependency
 
+  // --- THIS IS THE CORRECTED REAL-TIME LISTENER ---
   useEffect(() => {
+    if (!session) return;
+    
+    // Initial fetch
     fetchInitialData();
-    const jobsChannel = supabase
-      .channel('realtime:jobs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => fetchInitialData())
+
+    const handleRealtimeUpdate = (payload) => {
+      console.log('Real-time change received, re-fetching data.', payload);
+      fetchInitialData();
+    };
+
+    const channel = supabase
+      .channel('realtime-any-change')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, handleRealtimeUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_interests' }, handleRealtimeUpdate)
       .subscribe();
 
-    return () => supabase.removeChannel(jobsChannel);
-  }, [session]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, fetchInitialData]); // Add session and fetchInitialData
 
   const displayedJobs = useMemo(() => {
     let baseJobs = [...jobs];
@@ -189,20 +227,15 @@ export default function App() {
     } else if (profile?.role === 'service_provider') {
       if (view === 'mine') {
         baseJobs = baseJobs.filter(job => job.provider_id === session.user.id);
-      } else {
-        baseJobs = baseJobs.filter(job => !job.provider_id);
       }
     }
 
-    let filtered = baseJobs.filter(job => {
-      if (filter === 'all') return true;
-      const isCompleted = job.status === 'completed';
-      const isAccepted = !!job.provider_id;
-      if (filter === 'listed') return !isAccepted && !isCompleted;
-      if (filter === 'accepted') return isAccepted && !isCompleted;
-      if (filter === 'completed') return isCompleted;
-      return true;
-    });
+    let filtered = baseJobs; // Filtering logic is now handled server-side for provider `all` view and client view mostly
+    
+    if (profile?.role === 'service_provider' && view === 'all') {
+        filtered = baseJobs.filter(job => !job.provider_id);
+    }
+
 
     filtered.sort((a, b) => {
       switch (sort) {

@@ -476,26 +476,42 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
     setLoadingTaskId(null);
   };
   
+// In src/modals/JobActionModal.jsx
+
   const handleExpressInterest = async (jobId) => {
-    const { error } = await supabase.rpc('express_interest_in_job', { p_job_id: jobId });
-    if (error) {
-        const msg = (error.message || '').toLowerCase();
-        if (msg.includes('interest_limit_reached')) {
-            toast.error("This job has already reached the maximum interest level.");
-        } else if (msg.includes('already_interested')) {
-            toast.error("You've already shown interest in this job.");
-        } else if (msg.includes('job_already_assigned')) {
-            toast.error("This job has already been assigned.");
-        } else if (msg.includes('cannot_interest_own_job')) {
-            toast.error("You can't express interest in your own job.");
-        } else {
-            console.error(error);
-            toast.error("Failed to express interest. Please try again.");
-        }
-        return;
+    // 1. Express interest in the database.
+    const { error: interestError } = await supabase.rpc('express_interest_in_job', { p_job_id: jobId });
+
+    if (interestError) {
+      const msg = (interestError.message || '').toLowerCase();
+      if (msg.includes('interest_limit_reached')) {
+        toast.error("This job has already reached the maximum interest level.");
+      } else if (msg.includes('already_interested')) {
+        toast.error("You've already shown interest in this job.");
+      } else {
+        toast.error("Failed to express interest. Please try again.");
+      }
+      return;
     }
-    toast.success("Interest recorded! The customer will be notified.");
-    setHasExpressedInterest(true);
+
+    toast.success("Interest recorded!");
+
+    // 2. IMPORTANT: Re-fetch the single, updated job record from the database.
+    // We use the same RPC that the main job list uses to get all the fresh data.
+    const { data: updatedJob, error: fetchError } = await supabase
+      .rpc('get_jobs_for_provider', { p_provider_id: currentUserId })
+      .eq('id', jobId) // Filter the RPC results to just this one job
+      .single();
+
+    if (fetchError) {
+      // If the fetch fails, the app state won't update, but the interest was still recorded.
+      // A manual refresh would show the correct state.
+      toast.error("Could not refresh job data automatically.");
+    } else if (updatedJob) {
+      // 3. Pass the fresh, complete job object back up to App.jsx.
+      // This is the exact same pattern used by handleToggleTask.
+      onUpdate(updatedJob);
+    }
   };
   
   const handleShareJob = () => {
@@ -557,7 +573,16 @@ export default function JobActionModal({ job, onClose, onUpdate, onChecklistUpda
               {detailItem("Budget", job.budget ? `£${job.budget}` : 'Not specified')}
               
               {!isUnassigned && job.provider && userRole === 'customer' && (
-                detailItem( "Assigned To", <Link to={`/profile/${job.provider.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e)=>e.stopPropagation()}>{getDisplayName(job.provider)}</Link> )
+                detailItem(
+                  "Assigned To",
+                  <Link 
+                    to={`/profile/${job.provider.id}`} 
+                    className="text-blue-600 hover:underline font-medium" 
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {job.provider.company_name || job.provider.full_name || job.provider.email}
+                  </Link>
+                )
               )}
               {!isUnassigned && job.client && userRole === 'service_provider' && (
                 detailItem("Client", getDisplayName(job.client))
